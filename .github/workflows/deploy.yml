@@ -111,13 +111,9 @@ jobs:
               '.version=$ver | .apk_version=$ver | .apk_file=$apk' \
               output/version.json > "$tmp_json" && mv "$tmp_json" output/version.json
           else
-            cat > output/version.json <<EOF
-{
-  "version": "$release_ver",
-  "apk_version": "$release_ver",
-  "apk_file": "downloads/smdj-gd-latest.apk"
-}
-EOF
+            jq -n --arg ver "$release_ver" --arg apk "downloads/smdj-gd-latest.apk" \
+              '{"version": $ver, "apk_version": $ver, "apk_file": $apk}' \
+              > output/version.json
           fi
 
       - name: Ensure headers include APK mime/cors
@@ -127,12 +123,7 @@ EOF
           touch output/_headers
 
           if ! grep -q '^/\*\.apk$' output/_headers; then
-            cat >> output/_headers <<'EOF'
-
-/*.apk
-  Access-Control-Allow-Origin: *
-  Content-Type: application/vnd.android.package-archive
-EOF
+            printf '\n/*.apk\n  Access-Control-Allow-Origin: *\n  Content-Type: application/vnd.android.package-archive\n' >> output/_headers
           fi
 
       - name: Upload Pages artifact for GitHub Pages fallback
