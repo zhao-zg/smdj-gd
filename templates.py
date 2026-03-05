@@ -29,7 +29,7 @@ CORE_CSS_BASE = r"""
   --shadow-level:0 4px 22px -6px rgba(0,0,0,.22);
   --shadow-small:0 2px 4px rgba(0,0,0,.06);
   --transition-fast:.25s;
-  --page-transition-ms:250ms;
+  --page-transition-ms:220ms;
 }
 html[data-font="serif"]{--font-base:var(--font-serif);}
 html[data-font="dyslexic"]{--font-base:var(--font-dyslexic);}
@@ -83,20 +83,20 @@ html.dark .app-bar{background:rgba(28,30,34,.82);border-bottom-color:rgba(255,25
 .page-slide-exit.slide-to-right{animation:slideOutToRight var(--page-transition-ms) cubic-bezier(.4,.0,.2,1);}
 
 @keyframes slideInFromRight{
-  0%{transform:translateX(40px);opacity:0;}
+  0%{transform:translateX(28px);opacity:0;}
   100%{transform:translateX(0);opacity:1;}
 }
 @keyframes slideInFromLeft{
-  0%{transform:translateX(-40px);opacity:0;}
+  0%{transform:translateX(-28px);opacity:0;}
   100%{transform:translateX(0);opacity:1;}
 }
 @keyframes slideOutToLeft{
   0%{transform:translateX(0);opacity:1;}
-  100%{transform:translateX(-40px);opacity:0;}
+  100%{transform:translateX(-28px);opacity:0;}
 }
 @keyframes slideOutToRight{
   0%{transform:translateX(0);opacity:1;}
-  100%{transform:translateX(40px);opacity:0;}
+  100%{transform:translateX(28px);opacity:0;}
 }
 
 /* 设置面板等 */
@@ -198,7 +198,7 @@ function initKeys(){document.addEventListener('keydown',e=>{if(['INPUT','TEXTARE
 function motionPref(){if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)document.documentElement.classList.add('reduce-motion');}
 function systemThemeWatcher(){const mq=window.matchMedia('(prefers-color-scheme: dark)');mq.addEventListener('change',()=>{if(st.theme==='auto')applyTheme();});}
 function initTodayLinks(){document.querySelectorAll('.today-link').forEach(link=>{link.addEventListener('click',e=>{e.preventDefault();const startDate=link.dataset.startDate;const startIndex=parseInt(link.dataset.startIndex||'0',10);const total=parseInt(link.dataset.total||'0',10);if(!startDate||total<=0)return;const parts=startDate.split('-').map(Number);if(parts.length!==3){alert('起始日期配置错误');return;}const sDate=new Date(parts[0],parts[1]-1,parts[2]);const now=new Date();const diff=Math.floor((now-sDate)/(1000*60*60*24));let target=startIndex+diff;if(diff<0){alert('尚未到起始日期');target=startIndex;}else if(target>total-1){alert('超出范围，跳最后一页');target=total-1;}if(target<0)target=0;const prefix=(window.PAGE_INFO&&window.PAGE_INFO.current>=0)?'../':'';const url=prefix+'page_'+String(target).padStart(4,'0')+'/';customNavigate(url,target>(window.PAGE_INFO?.current||0)?'next':'prev');});});}
-function initSwipe(){if(localStorage.getItem('disableSwipe')==='1')return;const THRESHOLD_X=parseInt(localStorage.getItem('swipeThresholdX')||'60',10);const THRESHOLD_Y=parseInt(localStorage.getItem('swipeThresholdY')||'80',10);const ANGLE_RATIO=parseFloat(localStorage.getItem('swipeAngleRatio')||'1.2');const MAX_TIME=1000;let startX=0,startY=0,startTime=0,tracking=false,multi=false,moved=false;function panelOpen(){return document.getElementById('settings-panel')?.getAttribute('data-open')==='true';}function inTTSDock(yClient){const dock=document.getElementById('tts-dock');if(!dock)return false;const rect=dock.getBoundingClientRect();return yClient>=rect.top;}function onStart(e){if(e.touches&&e.touches.length>1){multi=true;return;}multi=false;if(panelOpen())return;const t=e.touches?e.touches[0]:e;if(inTTSDock(t.clientY))return;tracking=true;moved=false;startX=t.clientX;startY=t.clientY;startTime=Date.now();}function onMove(e){if(!tracking||multi)return;const t=e.touches?e.touches[0]:e;const dx=t.clientX-startX,dy=t.clientY-startY;if(Math.abs(dx)>6||Math.abs(dy)>6)moved=true;}function onEnd(e){if(!tracking||multi){tracking=false;return;}tracking=false;const t=e.changedTouches?e.changedTouches[0]:e;const totalDx=t.clientX-startX,totalDy=t.clientY-startY;const dt=Date.now()-startTime;logSwipe('end',{totalDx,totalDy,dt});if(!moved||dt>MAX_TIME)return;const sel=window.getSelection();if(sel&&sel.toString().length>0)return;if(Math.abs(totalDx)<THRESHOLD_X||Math.abs(totalDy)>THRESHOLD_Y)return;if(Math.abs(totalDx)/(Math.abs(totalDy)+1)<ANGLE_RATIO)return;if(totalDx>0){if(window.PAGE_INFO?.prevPage)customNavigate(window.PAGE_INFO.prevPage,'prev');}else{if(window.PAGE_INFO?.nextPage)customNavigate(window.PAGE_INFO.nextPage,'next');}}document.addEventListener('touchstart',onStart,{passive:true});document.addEventListener('touchmove',onMove,{passive:true});document.addEventListener('touchend',onEnd,{passive:true});document.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;onStart(e);});document.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')return;onEnd(e);});}
+function initSwipe(){if(localStorage.getItem('disableSwipe')==='1')return;const baseX=Math.round(window.innerWidth*0.14);const THRESHOLD_X=parseInt(localStorage.getItem('swipeThresholdX')||String(Math.max(42,Math.min(88,baseX))),10);const THRESHOLD_Y=parseInt(localStorage.getItem('swipeThresholdY')||'72',10);const ANGLE_RATIO=parseFloat(localStorage.getItem('swipeAngleRatio')||'1.35');const MAX_TIME=850;const MIN_VELOCITY=parseFloat(localStorage.getItem('swipeMinVelocityPxMs')||'0.30');let startX=0,startY=0,startTime=0,tracking=false,multi=false,moved=false;function panelOpen(){return document.getElementById('settings-panel')?.getAttribute('data-open')==='true';}function inTTSDock(yClient){const dock=document.getElementById('tts-dock');if(!dock)return false;const rect=dock.getBoundingClientRect();return yClient>=rect.top;}function onStart(e){if(e.touches&&e.touches.length>1){multi=true;return;}multi=false;if(panelOpen())return;const t=e.touches?e.touches[0]:e;if(inTTSDock(t.clientY))return;tracking=true;moved=false;startX=t.clientX;startY=t.clientY;startTime=Date.now();}function onMove(e){if(!tracking||multi)return;const t=e.touches?e.touches[0]:e;const dx=t.clientX-startX,dy=t.clientY-startY;if(Math.abs(dx)>5||Math.abs(dy)>5)moved=true;}function onEnd(e){if(!tracking||multi){tracking=false;return;}tracking=false;const t=e.changedTouches?e.changedTouches[0]:e;const totalDx=t.clientX-startX,totalDy=t.clientY-startY;const dt=Date.now()-startTime;const absDx=Math.abs(totalDx),absDy=Math.abs(totalDy);const velocity=absDx/Math.max(dt,1);logSwipe('end',{totalDx,totalDy,dt,velocity});if(!moved||dt>MAX_TIME)return;const sel=window.getSelection();if(sel&&sel.toString().length>0)return;if(absDy>THRESHOLD_Y)return;if(absDx<THRESHOLD_X&&velocity<MIN_VELOCITY)return;if(absDx/(absDy+1)<ANGLE_RATIO)return;if(totalDx>0){if(window.PAGE_INFO?.prevPage)customNavigate(window.PAGE_INFO.prevPage,'prev');}else{if(window.PAGE_INFO?.nextPage)customNavigate(window.PAGE_INFO.nextPage,'next');}}document.addEventListener('touchstart',onStart,{passive:true});document.addEventListener('touchmove',onMove,{passive:true});document.addEventListener('touchend',onEnd,{passive:true});document.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;onStart(e);});document.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')return;onEnd(e);});}
 document.addEventListener('click',e=>{const a=e.target.closest('a.nav-btn');if(!a)return;const role=a.dataset.nav;if(role==='prev'||role==='next'||role==='toc'){if(a.classList.contains('disabled'))return;const href=a.getAttribute('href');if(!href)return;e.preventDefault();customNavigate(href,role==='next'?'next':'prev');}});
 function updateNavBarByPageInfo(pageInfo){if(!pageInfo)return;const nav=document.querySelector('.nav');if(!nav)return;let prevBtn=nav.querySelector('[data-nav="prev"]');let nextBtn=nav.querySelector('[data-nav="next"]');let tocBtn=nav.querySelector('[data-nav="toc"]');if(!prevBtn)prevBtn=[...nav.querySelectorAll('a.nav-btn,span.nav-btn')].find(el=>el.textContent.trim()==='←');if(!nextBtn)nextBtn=[...nav.querySelectorAll('a.nav-btn,span.nav-btn')].find(el=>el.textContent.trim()==='→');if(!tocBtn)tocBtn=[...nav.querySelectorAll('a.nav-btn')].find(el=>el.textContent.trim()==='目录');if(pageInfo.prevPage){if(prevBtn&&prevBtn.tagName==='SPAN'){const a=document.createElement('a');a.className='nav-btn';a.textContent='←';a.dataset.nav='prev';prevBtn.replaceWith(a);prevBtn=a;}if(prevBtn){prevBtn.classList.remove('disabled');prevBtn.dataset.nav='prev';prevBtn.setAttribute('href',pageInfo.prevPage);prevBtn.removeAttribute('aria-hidden');}}else if(prevBtn){prevBtn.classList.add('disabled');prevBtn.removeAttribute('href');prevBtn.setAttribute('aria-hidden','true');prevBtn.dataset.nav='prev';}
 if(pageInfo.nextPage){if(nextBtn&&nextBtn.tagName==='SPAN'){const a=document.createElement('a');a.className='nav-btn';a.textContent='→';a.dataset.nav='next';nextBtn.replaceWith(a);nextBtn=a;}if(nextBtn){nextBtn.classList.remove('disabled');nextBtn.dataset.nav='next';nextBtn.setAttribute('href',pageInfo.nextPage);nextBtn.removeAttribute('aria-hidden');}}else if(nextBtn){nextBtn.classList.add('disabled');nextBtn.removeAttribute('href');nextBtn.setAttribute('aria-hidden','true');nextBtn.dataset.nav='next';}
@@ -217,6 +217,234 @@ function initSWDisableCheck(){const urlParams=new URLSearchParams(location.searc
 document.addEventListener('DOMContentLoaded',()=>{initSWDisableCheck();loadSettings();applySettings();initControls();initBackTop();initKeys();motionPref();systemThemeWatcher();restoreScroll();updateProgress();initTodayLinks();initSwipe();installInitialPrefetch();ensurePageShell();updateNavBarByPageInfo(window.PAGE_INFO);});
 window.addEventListener('scroll',()=>{handleScroll();saveScrollThrottle();},{passive:true});
 window.addEventListener('beforeunload',()=>saveScrollThrottle());
+})();
+"""
+
+APP_UPDATE_JS = r"""
+/* APK self-update for Capacitor Android */
+(() => {
+  const UPDATE_ENDPOINTS = [
+    'https://smdj-gd.pages.dev/version.json',
+    './version.json',
+  ];
+  const APK_PATH_FALLBACK = 'downloads/smdj-gd-latest.apk';
+  const CHUNK_SIZE = 256 * 1024;
+
+  const mirrorWrap = [
+    (u) => u,
+    (u) => `https://gh-proxy.com/${u}`,
+    (u) => `https://ghproxy.net/${u}`,
+  ];
+
+  function log(...args) {
+    if (localStorage.getItem('updateDebug') === '1') console.log('[APP-UPDATE]', ...args);
+  }
+
+  function isNative() {
+    return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  }
+
+  function cmpVer(a, b) {
+    const pa = String(a || '0').split('.').map((x) => parseInt(x, 10) || 0);
+    const pb = String(b || '0').split('.').map((x) => parseInt(x, 10) || 0);
+    const n = Math.max(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      const da = pa[i] || 0;
+      const db = pb[i] || 0;
+      if (da > db) return 1;
+      if (da < db) return -1;
+    }
+    return 0;
+  }
+
+  function bytesToBase64(uint8) {
+    let binary = '';
+    const step = 0x8000;
+    for (let i = 0; i < uint8.length; i += step) {
+      const sub = uint8.subarray(i, i + step);
+      binary += String.fromCharCode.apply(null, sub);
+    }
+    return btoa(binary);
+  }
+
+  async function fetchJsonNoStore(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    return { data, sourceUrl: r.url || url };
+  }
+
+  async function fetchVersionInfo() {
+    let lastErr = null;
+    for (const ep of UPDATE_ENDPOINTS) {
+      try {
+        const abs = new URL(ep, window.location.href).href;
+        const out = await fetchJsonNoStore(abs);
+        return out;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('version fetch failed');
+  }
+
+  async function getLocalVersion() {
+    try {
+      const app = window.Capacitor?.Plugins?.App;
+      if (app && typeof app.getInfo === 'function') {
+        const info = await app.getInfo();
+        if (info && info.version) return String(info.version);
+      }
+    } catch (_) {}
+    return localStorage.getItem('app.localVersion') || '0.0.0';
+  }
+
+  function toAbsolute(url, baseUrl) {
+    return new URL(url, baseUrl || window.location.href).href;
+  }
+
+  function buildUrlCandidates(remote, sourceUrl) {
+    const candidates = [];
+    const files = [];
+    if (remote.apk_file) files.push(String(remote.apk_file));
+    if (!files.length) files.push(APK_PATH_FALLBACK);
+    const direct = [];
+    if (remote.apk_url) direct.push(String(remote.apk_url));
+    if (Array.isArray(remote.apk_urls)) {
+      remote.apk_urls.forEach((u) => u && direct.push(String(u)));
+    }
+    files.forEach((f) => direct.push(toAbsolute(f, sourceUrl)));
+
+    direct.forEach((u) => {
+      if (/^https?:\/\//i.test(u)) {
+        mirrorWrap.forEach((fn) => candidates.push(fn(u)));
+      }
+    });
+    return [...new Set(candidates)];
+  }
+
+  async function tryDownloadToFile(urls, path, onProgress) {
+    const fs = window.Capacitor?.Plugins?.Filesystem;
+    if (!fs) throw new Error('Filesystem plugin unavailable');
+
+    let lastErr = null;
+    for (const u of urls) {
+      try {
+        log('download try', u);
+        const res = await fetch(u, { cache: 'no-store' });
+        if (!res.ok || !res.body) throw new Error(`download failed ${res.status}`);
+        const total = parseInt(res.headers.get('content-length') || '0', 10) || 0;
+
+        await fs.writeFile({ path, data: '', directory: 'CACHE', recursive: true });
+        const reader = res.body.getReader();
+        let received = 0;
+        let pending = new Uint8Array(0);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+
+          const merged = new Uint8Array(pending.length + value.length);
+          merged.set(pending, 0);
+          merged.set(value, pending.length);
+
+          let offset = 0;
+          while (merged.length - offset >= CHUNK_SIZE) {
+            const chunk = merged.subarray(offset, offset + CHUNK_SIZE);
+            await fs.appendFile({ path, data: bytesToBase64(chunk), directory: 'CACHE' });
+            offset += CHUNK_SIZE;
+          }
+          pending = merged.subarray(offset);
+
+          received += value.length;
+          if (onProgress) onProgress(received, total);
+        }
+
+        if (pending.length > 0) {
+          await fs.appendFile({ path, data: bytesToBase64(pending), directory: 'CACHE' });
+        }
+
+        const uriObj = await fs.getUri({ path, directory: 'CACHE' });
+        return { url: u, uri: uriObj?.uri || '', path };
+      } catch (e) {
+        lastErr = e;
+        log('download failed', u, String(e));
+      }
+    }
+    throw lastErr || new Error('all download URLs failed');
+  }
+
+  async function installApkByPlugin(fileInfo) {
+    const p = window.Capacitor?.Plugins || {};
+    const installer = p.ApkInstaller || p.APKInstaller || p.ApkUpdate;
+    if (!installer) throw new Error('ApkInstaller plugin unavailable');
+
+    const methods = ['install', 'installApk', 'openApk', 'openInstaller'];
+    for (const m of methods) {
+      if (typeof installer[m] !== 'function') continue;
+      try {
+        await installer[m]({
+          path: fileInfo.path,
+          filePath: fileInfo.path,
+          uri: fileInfo.uri,
+          apkPath: fileInfo.path,
+        });
+        return true;
+      } catch (_) {}
+    }
+    throw new Error('No supported installer method');
+  }
+
+  async function checkForUpdates(silent = false) {
+    if (!isNative()) {
+      return { ok: false, skipped: true, reason: 'not-native' };
+    }
+    const fetched = await fetchVersionInfo();
+    const remote = fetched.data || {};
+    const sourceUrl = fetched.sourceUrl;
+    const localVersion = await getLocalVersion();
+    const remoteVersion = String(remote.apk_version || remote.version || '0.0.0');
+    const hasNew = cmpVer(remoteVersion, localVersion) > 0;
+
+    if (!hasNew) {
+      if (!silent) alert(`已是最新版本 (${localVersion})`);
+      return { ok: true, update: false, localVersion, remoteVersion };
+    }
+
+    const confirmInstall = confirm(`发现新版本 ${remoteVersion}，是否立即下载并安装？`);
+    if (!confirmInstall) return { ok: true, update: true, canceled: true, remoteVersion };
+
+    const urls = buildUrlCandidates(remote, sourceUrl);
+    if (!urls.length) throw new Error('No APK URL candidates');
+
+    const savePath = `updates/smdj-gd-${remoteVersion}.apk`;
+    const progressEl = document.getElementById('cache-info');
+    const onProgress = (loaded, total) => {
+      if (!progressEl) return;
+      if (total > 0) {
+        const p = ((loaded / total) * 100).toFixed(1);
+        progressEl.textContent = `更新下载中: ${p}% (${Math.floor(loaded / 1024)}KB / ${Math.floor(total / 1024)}KB)`;
+      } else {
+        progressEl.textContent = `更新下载中: ${Math.floor(loaded / 1024)}KB`;
+      }
+    };
+
+    const fileInfo = await tryDownloadToFile(urls, savePath, onProgress);
+    await installApkByPlugin(fileInfo);
+    if (progressEl) progressEl.textContent = '已触发安装器，请在系统安装界面确认安装';
+    return { ok: true, update: true, installed: true, remoteVersion };
+  }
+
+  window.AppUpdate = {
+    checkForUpdates,
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && isNative()) {
+      checkForUpdates(true).catch((e) => log('resume check fail', String(e)));
+    }
+  });
 })();
 """
 
@@ -442,16 +670,18 @@ const OTHER_CACHE  = 'other-'  + VERSION;
 const CORE_ASSETS = [
   './',
   './offline.html',
+  './manifest.json',
   './manifest.webmanifest',
   './assets/css/core.css',
   './assets/css/themes.css',
   './assets/css/extra.css',
   './assets/js/reader.js',
   './assets/js/tts.js',
+  './assets/js/app-update.js',
   './assets/js/sw-register.js'
 ];
 
-const PAGE_LIST = /*__PAGE_DIRS__*/ [];
+const PAGE_LIST = /*__PAGE_DIRS__*/;
 
 const NAV_TIMEOUT     = 15000;
 const RESCAN_INTERVAL = 1000 * 60 * 60;
@@ -471,6 +701,7 @@ async function networkFetchWithTimeout(req){
 }
 function normalizePagePath(pathname){
   pathname=pathname.replace(/\/index\.html$/,'/');
+  if(/\/page_\d{4}\.html$/.test(pathname)) return pathname;
   if(/\/page_\d{4}$/.test(pathname)) pathname+='/';
   return pathname;
 }
@@ -596,6 +827,50 @@ async function backgroundRescan(){
   }
   log('backgroundRescan done');
 }
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  const port = event.ports && event.ports[0];
+  if (!port || !data.type) return;
+
+  if (data.type === 'CACHE_INFO') {
+    event.waitUntil((async () => {
+      try {
+        const names = await caches.keys();
+        let entryCount = 0;
+        for (const name of names) {
+          const cache = await caches.open(name);
+          const keys = await cache.keys();
+          entryCount += keys.length;
+        }
+        port.postMessage({
+          ok: true,
+          available: true,
+          version: VERSION,
+          cacheCount: names.length,
+          entryCount,
+          cacheNames: names,
+        });
+      } catch (e) {
+        port.postMessage({ ok: false, available: true, error: String(e) });
+      }
+    })());
+    return;
+  }
+
+  if (data.type === 'CLEAR_CACHE') {
+    event.waitUntil((async () => {
+      try {
+        const names = await caches.keys();
+        await Promise.all(names.map((name) => caches.delete(name)));
+        const sc = await caches.open(STATIC_CACHE);
+        await sc.addAll(CORE_ASSETS);
+        port.postMessage({ ok: true, deleted: names.length });
+      } catch (e) {
+        port.postMessage({ ok: false, error: String(e) });
+      }
+    })());
+  }
+});
 setInterval(()=>backgroundRescan().catch(e=>log('periodic rescan err',e)),RESCAN_INTERVAL);
 """
 

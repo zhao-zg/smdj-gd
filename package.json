@@ -1,0 +1,21 @@
+{
+  "name": "smdj-gd",
+  "version": "1.0.0",
+  "description": "smdj-gd - Android App",
+  "scripts": {
+    "build": "echo \"replace with your static-site build command\"",
+    "cap:add": "npx cap add android",
+    "cap:sync": "npx cap sync",
+    "cap:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "capacitor-apk-installer": "file:plugins/apk-installer"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/android": "^6.0.0"
+  }
+}

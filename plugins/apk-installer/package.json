@@ -1,0 +1,16 @@
+{
+  "name": "capacitor-apk-installer",
+  "version": "1.0.0",
+  "description": "Local Capacitor plugin for installing APK files on Android",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/plugin.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "android"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}

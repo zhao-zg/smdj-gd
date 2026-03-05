@@ -13,11 +13,11 @@ import json
 from pathlib import Path
 from typing import List, Dict, Optional
 from xml.etree import ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from templates import (
     CORE_CSS_FULL, CORE_CSS_LIGHT, THEMES_CSS, FONTS_CSS_TEMPLATE,
-    READER_JS, TTS_JS, SW_REGISTER_JS, SERVICE_WORKER_JS_NEW, OFFLINE_HTML,
+    READER_JS, TTS_JS, APP_UPDATE_JS, SW_REGISTER_JS, SERVICE_WORKER_JS_NEW, OFFLINE_HTML,
 )
 from icon_generator import (
     generate_icon, _safe_b64_decode, BASE64_ICON_192, BASE64_ICON_512,
@@ -160,6 +160,7 @@ class EPUBToHTMLConverter:
                         if src:
                             self.toc_items.append({"title":(tx.text or '').strip() or "无标题","href":src})
                 if self.toc_items:
+                    self._adjust_toc_weekday_by_start_date()
                     print("📚 TOC (NCX)", len(self.toc_items))
                     return
             except Exception as e:
@@ -175,6 +176,7 @@ class EPUBToHTMLConverter:
                         title=re.sub("<.*?>","",inner).strip()
                         self.toc_items.append({"title":title or "无标题","href":href.split("#")[0]})
                     if self.toc_items:
+                        self._adjust_toc_weekday_by_start_date()
                         print("📚 TOC (HTML NAV)", len(self.toc_items))
                         return
                 except Exception as e:
@@ -183,6 +185,51 @@ class EPUBToHTMLConverter:
             for i,h in enumerate(self.spine_items,1):
                 self.toc_items.append({"title":f"第 {i} 部分","href":h})
             print("🪄 TOC 回退: 使用 spine 顺序")
+
+    def _adjust_toc_weekday_by_start_date(self):
+        if not self.auto_start_date_str or not self.toc_items:
+            return
+        try:
+            start_date=datetime.strptime(self.auto_start_date_str, "%Y-%m-%d").date()
+        except Exception:
+            return
+
+        day_pat=re.compile(r"第\s*(\d+)\s*天")
+        weekday_pat=re.compile(r"(周[一二三四五六日天]|主日)")
+        first_day_num=None
+        for item in self.toc_items:
+            m=day_pat.search(item.get("title", ""))
+            if m:
+                first_day_num=int(m.group(1))
+                break
+        if first_day_num is None:
+            return
+
+        changed=0
+        labels=["周一","周二","周三","周四","周五","周六","主日"]
+        for item in self.toc_items:
+            title=item.get("title", "")
+            m=day_pat.search(title)
+            if not m:
+                continue
+            day_num=int(m.group(1))
+            d=start_date + timedelta(days=day_num - first_day_num)
+            new_weekday=labels[d.weekday()]
+            date_text=d.strftime("%Y-%m-%d")
+            # 先去掉可能已有的日期标注，避免重复叠加
+            new_title=re.sub(
+                r"(第\s*\d+\s*天)\s*(?:[\(（\[]\d{4}-\d{2}-\d{2}[\)）\]])?",
+                r"\1",
+                title,
+                count=1,
+            )
+            new_title=re.sub(r"(第\s*\d+\s*天)", rf"\1({date_text})", new_title, count=1)
+            new_title=weekday_pat.sub(new_weekday, new_title, count=1)
+            if new_title != title:
+                item["title"]=new_title
+                changed+=1
+        if changed:
+            print(f"🗓 已按开始日期重算周几并补日期: {changed} 条")
 
     def _build_link_map(self):
         self._link_map.clear()
@@ -205,8 +252,22 @@ class EPUBToHTMLConverter:
             self.assets_css_dir.joinpath("fonts.css").write_text(FONTS_CSS_TEMPLATE,encoding="utf-8")
         self.assets_css_dir.joinpath("extra.css").write_text("/* EPUB 内置 CSS 合并后写入 */",encoding="utf-8")
         reader_js=READER_JS.replace("/*__DELAY_SEGMENT__*/","false" if self.presegment_tts else "true")
+        # 扁平页面结构: page_xxxx.html
+        reader_js=reader_js.replace(
+            "const prefix=(window.PAGE_INFO&&window.PAGE_INFO.current>=0)?'../':'';",
+            "const prefix='';"
+        )
+        reader_js=reader_js.replace(
+            "const url=prefix+'page_'+String(target).padStart(4,'0')+'/';",
+            "const url=prefix+'page_'+String(target).padStart(4,'0')+'.html';"
+        )
+        reader_js=reader_js.replace(
+            "const correct=(pageInfo.current===-1)?'index.html':'../index.html';",
+            "const correct=(pageInfo.current===-1)?'index.html':('index.html?from='+pageInfo.current);"
+        )
         self.assets_js_dir.joinpath("reader.js").write_text(reader_js,encoding="utf-8")
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
+        self.assets_js_dir.joinpath("app-update.js").write_text(APP_UPDATE_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("sw-register.js").write_text(SW_REGISTER_JS,encoding="utf-8")
         print("🧩 静态资源写入完成")
 
@@ -229,8 +290,16 @@ class EPUBToHTMLConverter:
         m=re.search(r"<body[^>]*>(.*?)</body>",content,re.I|re.S)
         return m.group(1) if m else content
 
+    def _replace_first_heading(self, body: str, title: str) -> str:
+        escaped_title = html.escape(title)
+        patterns = [r"<h1\b[^>]*>.*?</h1>", r"<h2\b[^>]*>.*?</h2>", r"<h3\b[^>]*>.*?</h3>"]
+        for pat in patterns:
+            if re.search(pat, body, flags=re.I | re.S):
+                return re.sub(pat, f'<h1 class="chapter-title">{escaped_title}</h1>', body, count=1, flags=re.I | re.S)
+        return body
+
     def _clean_body(self, body: str, is_content: bool) -> str:
-        prefix='../' if is_content else ''
+        prefix=''
         body=re.sub(r'\sstyle=["\'][^"\']*["\']','',body)
 
         def repl_img(m):
@@ -245,7 +314,7 @@ class EPUBToHTMLConverter:
             low=url.lower()
             if low.startswith(('http://','https://','mailto:','data:')) or low.startswith('#'):
                 return m.group(0)
-            if re.match(r'(\.\./)?page_\d{4}/',url):
+            if re.match(r'(\.\./)?page_\d{4}\.html',url):
                 return m.group(0)
             if '#' in url:
                 main,frag=url.split('#',1)
@@ -261,7 +330,7 @@ class EPUBToHTMLConverter:
                         target=v;break
             if target is None:
                 return m.group(0)
-            new_href=f'{prefix}page_{target:04d}/'
+            new_href=f'{prefix}page_{target:04d}.html'
             if frag: new_href+=f'#{frag}'
             return f'{pre}{new_href}{suf}'
         body=link_pattern.sub(repl_link,body)
@@ -272,13 +341,12 @@ class EPUBToHTMLConverter:
         total=len(self.spine_items)
         for idx,href in enumerate(self.spine_items):
             src=self.opf_dir/href
-            page_dir=self.output_dir/f"page_{idx:04d}"
-            page_dir.mkdir(parents=True,exist_ok=True)
+            page_file=self.output_dir/f"page_{idx:04d}.html"
             filename=href.lower().split('/')[-1]
             if (filename in self._toc_filename_set) and not self.keep_epub_toc:
                 redirect_html=self._build_redirect_page(idx,total)
-                (page_dir/"index.html").write_text(redirect_html,encoding="utf-8")
-                print(f"➡️ TOC 重定向 page_{idx:04d}")
+                page_file.write_text(redirect_html,encoding="utf-8")
+                print(f"➡️ TOC 重定向 page_{idx:04d}.html")
                 continue
             if not src.exists():
                 print("⚠️ 缺失:",href);continue
@@ -286,50 +354,51 @@ class EPUBToHTMLConverter:
             body=self._extract_body(raw)
             body=self._clean_body(body,True)
             html_out=self._build_content_page(body,idx,total)
-            html_out=re.sub(r"page_(\d{4})\.html",r"page_\1/",html_out)
-            (page_dir/"index.html").write_text(html_out,encoding="utf-8")
-            print(f"✅ page_{idx:04d}/index.html")
+            page_file.write_text(html_out,encoding="utf-8")
+            print(f"✅ page_{idx:04d}.html")
 
     def _build_redirect_page(self,idx:int,total:int)->str:
         return f"""<!DOCTYPE html><html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <title>目录重定向</title>
-<meta http-equiv="refresh" content="0;url=../index.html">
-<script>location.replace('../index.html');</script>
-<link rel="stylesheet" href="../assets/css/core.css">
-<link rel="stylesheet" href="../assets/css/themes.css">
-<link rel="stylesheet" href="../assets/css/extra.css">
+<meta http-equiv="refresh" content="0;url=index.html">
+<script>location.replace('index.html');</script>
+<link rel="stylesheet" href="assets/css/core.css">
+<link rel="stylesheet" href="assets/css/themes.css">
+<link rel="stylesheet" href="assets/css/extra.css">
 </head><body>
-<p>跳转到目录... <a href="../index.html">若未跳转点击</a></p>
+<p>跳转到目录... <a href="index.html">若未跳转点击</a></p>
 </body></html>"""
 
     def _build_content_page(self,body:str,idx:int,total:int)->str:
-        prev=f"page_{idx-1:04d}/" if idx>0 else None
-        next=f"page_{idx+1:04d}/" if idx<total-1 else None
+        prev=f"page_{idx-1:04d}.html" if idx>0 else None
+        next=f"page_{idx+1:04d}.html" if idx<total-1 else None
+        page_title=self._toc_title_by_index(idx) or f"第 {idx+1} 页"
+        body=self._replace_first_heading(body, page_title)
         today_btn=""
         if self.enable_today:
             today_btn=(f'<a class="nav-btn today-link" href="#" data-start-date="{self.auto_start_date_str}" '
                        f'data-start-index="{self.auto_start_page_index}" data-total="{total}">今日</a>')
         prefetch=[]
-        if prev: prefetch.append(f'<link rel="prefetch" href="../{prev}" as="document">')
-        if next: prefetch.append(f'<link rel="prefetch" href="../{next}" as="document">')
+        if prev: prefetch.append(f'<link rel="prefetch" href="{prev}" as="document">')
+        if next: prefetch.append(f'<link rel="prefetch" href="{next}" as="document">')
         prefetch_html="\n".join(prefetch)
-        fonts_link='' if self.no_fonts_css else '<link rel="stylesheet" href="../assets/css/fonts.css" />'
-        prev_btn=(f'<a class="nav-btn" data-nav="prev" href="../{prev}">←</a>'
+        fonts_link='' if self.no_fonts_css else '<link rel="stylesheet" href="assets/css/fonts.css" />'
+        prev_btn=(f'<a class="nav-btn" data-nav="prev" href="{prev}">←</a>'
                   if prev else '<a class="nav-btn disabled" data-nav="prev" aria-hidden="true">←</a>')
-        next_btn=(f'<a class="nav-btn" data-nav="next" href="../{next}">→</a>'
+        next_btn=(f'<a class="nav-btn" data-nav="next" href="{next}">→</a>'
                   if next else '<a class="nav-btn disabled" data-nav="next" aria-hidden="true">→</a>')
         return f"""<!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto" data-font="sans">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>第 {idx+1} 页</title>
-<link rel="manifest" href="../manifest.webmanifest" />
+<title>{html.escape(page_title)}</title>
+<link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#3366ff" />
-<link rel="stylesheet" href="../assets/css/core.css" />
-<link rel="stylesheet" href="../assets/css/themes.css" />
-<link rel="stylesheet" href="../assets/css/extra.css" />
+<link rel="stylesheet" href="assets/css/core.css" />
+<link rel="stylesheet" href="assets/css/themes.css" />
+<link rel="stylesheet" href="assets/css/extra.css" />
 {fonts_link}
 {prefetch_html}
 </head>
@@ -338,7 +407,7 @@ class EPUBToHTMLConverter:
   <nav class="nav">
     <div class="nav-buttons">
       {prev_btn}
-      <a class="nav-btn" data-nav="toc" href="../index.html">目录</a>
+        <a class="nav-btn" data-nav="toc" href="index.html?from={idx}">目录</a>
       {today_btn}
       {next_btn}
     </div>
@@ -354,11 +423,12 @@ class EPUBToHTMLConverter:
 {self._tts_dock_html()}
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
 <script>
-window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"../{prev}"' if prev else 'null'},nextPage:{f'"../{next}"' if next else 'null'}}};
+window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};
 </script>
-<script src="../assets/js/tts.js" defer></script>
-<script src="../assets/js/reader.js" defer></script>
-<script src="../assets/js/sw-register.js" defer></script>
+<script src="assets/js/tts.js" defer></script>
+<script src="assets/js/reader.js" defer></script>
+<script src="assets/js/sw-register.js" defer></script>
+{self._app_update_loader_script()}
 </body>
 </html>"""
 
@@ -424,15 +494,178 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"../{prev}"' if prev 
   </div>
 </div>"""
 
+    def _pwa_actions_html(self) -> str:
+        return """<section id="app-actions" style="margin:24px 0 8px; padding:14px; border:1px solid var(--c-border); border-radius:12px; background:var(--c-surface);">
+    <h3 style="margin:0 0 10px; font-size:1rem;">应用与缓存</h3>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+        <button id="btn-app-update" class="nav-btn" type="button" style="display:none;">检查更新</button>
+        <a id="btn-download-apk" class="nav-btn" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
+        <button id="btn-install-pwa" class="nav-btn" type="button" style="display:none;">安装 PWA</button>
+        <button id="btn-cache-info" class="nav-btn" type="button" style="display:none;">缓存数据</button>
+        <button id="btn-clear-cache" class="nav-btn" type="button" style="display:none;">清理缓存</button>
+    </div>
+    <div id="cache-info" class="hint" style="margin:0; text-align:left; white-space:pre-wrap;">缓存状态：未查询</div>
+</section>"""
+
+    def _pwa_actions_script(self) -> str:
+        return """<script>
+let __pwaInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    __pwaInstallPrompt = e;
+    const btn = document.getElementById('btn-install-pwa');
+    if (btn) btn.style.display = 'inline-flex';
+});
+
+window.addEventListener('appinstalled', () => {
+    const btn = document.getElementById('btn-install-pwa');
+    if (btn) btn.style.display = 'none';
+});
+
+async function cxCacheInfo() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.active) return { available: false };
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => resolve(event.data || {});
+        reg.active.postMessage({ type: 'CACHE_INFO' }, [channel.port2]);
+    });
+}
+
+async function cxClearCache() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.active) return false;
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => resolve(Boolean(event.data && event.data.ok));
+        reg.active.postMessage({ type: 'CLEAR_CACHE' }, [channel.port2]);
+    });
+}
+
+function isCapacitorApp() {
+    if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+        return window.Capacitor.isNativePlatform();
+    }
+    const ua = navigator.userAgent || '';
+    return /; wv\\)|\\bwv\\b|capacitor/i.test(ua);
+}
+
+function isStandalonePWA() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isAndroidBrowser() {
+    return /Android/i.test(navigator.userAgent || '');
+}
+
+async function setupAdaptiveActions() {
+    const updateBtn = document.getElementById('btn-app-update');
+    const downloadBtn = document.getElementById('btn-download-apk');
+    const installBtn = document.getElementById('btn-install-pwa');
+    const infoBtn = document.getElementById('btn-cache-info');
+    const clearBtn = document.getElementById('btn-clear-cache');
+    const infoBox = document.getElementById('cache-info');
+    if (!updateBtn || !downloadBtn || !installBtn || !infoBtn || !clearBtn || !infoBox) return;
+
+    const cap = isCapacitorApp();
+    const installed = isStandalonePWA();
+    const android = isAndroidBrowser();
+
+    if (cap || installed) {
+        infoBtn.style.display = 'inline-flex';
+        clearBtn.style.display = 'inline-flex';
+        if (cap) updateBtn.style.display = 'inline-flex';
+    } else if (android) {
+        downloadBtn.style.display = 'inline-flex';
+        installBtn.style.display = 'inline-flex';
+    }
+
+    try {
+        const v = await fetch('./version.json', { cache: 'no-store' }).then((r) => r.json());
+        if (v && v.apk_file) {
+            downloadBtn.href = './' + v.apk_file;
+            downloadBtn.setAttribute('download', '');
+        }
+    } catch (_) {
+        downloadBtn.href = '#';
+    }
+
+    installBtn.addEventListener('click', async () => {
+        if (!__pwaInstallPrompt) {
+            infoBox.textContent = '当前环境暂不支持安装提示';
+            return;
+        }
+        __pwaInstallPrompt.prompt();
+        try { await __pwaInstallPrompt.userChoice; } catch (_) {}
+        __pwaInstallPrompt = null;
+    });
+
+    infoBtn.addEventListener('click', async () => {
+        const info = await cxCacheInfo();
+        if (!info.available) {
+            infoBox.textContent = '缓存状态：Service Worker 未就绪';
+            return;
+        }
+        infoBox.textContent = `缓存状态：\n版本 ${info.version || '-'}\n缓存区 ${info.cacheCount || 0} 个\n条目 ${info.entryCount || 0} 个`;
+    });
+
+    clearBtn.addEventListener('click', async () => {
+        const ok = await cxClearCache();
+        infoBox.textContent = ok ? '缓存状态：已清理，建议刷新页面' : '缓存状态：清理失败';
+    });
+
+    updateBtn.addEventListener('click', async () => {
+        if (!window.AppUpdate || typeof window.AppUpdate.checkForUpdates !== 'function') {
+            infoBox.textContent = '更新模块未加载（仅 Capacitor 原生环境可用）';
+            return;
+        }
+        try {
+            infoBox.textContent = '正在检查更新...';
+            await window.AppUpdate.checkForUpdates(false);
+        } catch (e) {
+            infoBox.textContent = '更新失败: ' + String(e && e.message ? e.message : e);
+        }
+    });
+}
+
+window.addEventListener('load', setupAdaptiveActions);
+window.addEventListener('load', () => {
+    const from = new URLSearchParams(window.location.search).get('from');
+    if (from === null) return;
+    const idx = parseInt(from, 10);
+    if (Number.isNaN(idx)) return;
+    const target = document.getElementById('toc-item-' + String(idx).padStart(4, '0'));
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>"""
+
+    def _app_update_loader_script(self) -> str:
+        return """<script>
+(function(){
+    try {
+        if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) {
+            var s = document.createElement('script');
+            s.src = 'assets/js/app-update.js';
+            s.defer = true;
+            document.head.appendChild(s);
+        }
+    } catch (_) {}
+})();
+</script>"""
+
     def _generate_index_page(self):
         items=[]
         for item in self.toc_items:
             idx=self._find_spine_index(item['href'])
             if idx is not None:
-                items.append(f'<li><a href="page_{idx:04d}/">{html.escape(item["title"] or "无标题")}</a></li>')
+                items.append(
+                    f'<li id="toc-item-{idx:04d}"><a href="page_{idx:04d}.html">{html.escape(item["title"] or "无标题")}</a></li>'
+                )
         if not items:
             for i in range(len(self.spine_items)):
-                items.append(f'<li><a href="page_{i:04d}/">第 {i+1} 页</a></li>')
+                items.append(f'<li><a href="page_{i:04d}.html">第 {i+1} 页</a></li>')
         toc_html="\n      ".join(items)
         total=len(self.spine_items)
         today_btn=""
@@ -446,7 +679,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"../{prev}"' if prev 
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>目录</title>
-<link rel="manifest" href="manifest.webmanifest" />
+<link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#3366ff" />
 <link rel="stylesheet" href="assets/css/core.css" />
 <link rel="stylesheet" href="assets/css/themes.css" />
@@ -474,6 +707,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"../{prev}"' if prev 
       {toc_html}
   </ul>
   <p class="hint">共 {total} 页 · 今日功能: {self.enable_today} · 平滑翻页启用</p>
+    {self._pwa_actions_html()}
 </main>
 {self._tts_dock_html()}
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
@@ -483,6 +717,8 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
+{self._app_update_loader_script()}
+{self._pwa_actions_script()}
 </body>
 </html>"""
         (self.output_dir/"index.html").write_text(index_html,encoding="utf-8")
@@ -492,6 +728,15 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
         for i,s in enumerate(self.spine_items):
             if s.endswith(href) or href.endswith(s):
                 return i
+        return None
+
+    def _toc_title_by_index(self, idx: int) -> Optional[str]:
+        for item in self.toc_items:
+            href=item.get('href','')
+            if self._find_spine_index(href) == idx:
+                title=(item.get('title') or '').strip()
+                if title:
+                    return title
         return None
 
     def _copy_images(self):
@@ -543,19 +788,52 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
         manifest={
             "name": f"{self.epub_path.stem} 阅读器",
             "short_name": self.epub_path.stem[:12],
+            "description": f"{self.epub_path.stem} 离线阅读应用",
             "start_url": "./index.html",
             "display": "standalone",
             "background_color": "#ffffff",
             "theme_color": "#3366ff",
             "lang":"zh-CN",
             "icons":[
-                {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
-                {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"}
+                {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+                {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"},
+                {"src":"./icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}
             ]
         }
-        self.output_dir.joinpath("manifest.webmanifest").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
+        manifest_json = json.dumps(manifest,ensure_ascii=False,indent=2)
+        self.output_dir.joinpath("manifest.json").write_text(manifest_json,encoding="utf-8")
+        # 兼容历史引用
+        self.output_dir.joinpath("manifest.webmanifest").write_text(manifest_json,encoding="utf-8")
+
+        # 生成简单 SVG 图标（避免缺少 scalable icon）
+        icon_svg = """<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#3366ff\"/><text x=\"50%\" y=\"56%\" text-anchor=\"middle\" font-size=\"220\" font-family=\"Arial, sans-serif\" fill=\"#ffffff\">R</text></svg>"""
+        self.icons_dir.joinpath("icon.svg").write_text(icon_svg, encoding="utf-8")
+
+        version_info = {
+            "version": "1.0.0",
+            "apk_version": "1.0.0",
+            "apk_file": f"{self.epub_path.stem}-v1.0.0.apk",
+        }
+        self.output_dir.joinpath("version.json").write_text(
+            json.dumps(version_info, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+        headers_text = """/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+  Access-Control-Allow-Origin: *
+"""
+        self.output_dir.joinpath("_headers").write_text(headers_text, encoding="utf-8")
+
         self.output_dir.joinpath("offline.html").write_text(OFFLINE_HTML,encoding="utf-8")
-        page_dirs=[f"page_{i:04d}/" for i in range(len(self.spine_items))]
-        sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_dirs,ensure_ascii=False))
+        page_files=[f"page_{i:04d}.html" for i in range(len(self.spine_items))]
+        sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
-        print("📦 已写出 PWA (manifest / sw.js / offline.html)")
+        print("📦 已写出 PWA (manifest/version/sw/offline/_headers)")

@@ -1,0 +1,219 @@
+name: Deploy Static Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "main.py"
+      - "converter.py"
+      - "templates.py"
+      - "icon_generator.py"
+      - "app_config.json"
+      - "package.json"
+      - "resource/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      auto_start_date:
+        description: "Reading start date (YYYY-MM-DD)"
+        required: false
+        default: "2026-03-07"
+      source_ref:
+        description: "Git ref to build (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-static-site
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy-cloudflare:
+    runs-on: ubuntu-latest
+    env:
+      CF_PROJECT_NAME: smdj-gd
+      DEFAULT_START_DATE: "2026-03-07"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref != '' && github.event.inputs.source_ref || github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Build static site to output/
+        shell: bash
+        run: |
+          AUTO_START_DATE="${{ github.event.inputs.auto_start_date }}"
+          if [ -z "$AUTO_START_DATE" ]; then AUTO_START_DATE="$DEFAULT_START_DATE"; fi
+          python ./main.py --auto-start-date "$AUTO_START_DATE"
+
+      - name: Download latest APK from GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          release_json=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ] || [ -z "$release_json" ]; then
+            echo "No release found, skip APK download."
+            exit 0
+          fi
+
+          apk_url=$(echo "$release_json" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .url' | head -n 1)
+          apk_name=$(echo "$release_json" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .name' | head -n 1)
+
+          if [ -z "$apk_url" ] || [ "$apk_url" = "null" ]; then
+            echo "Latest release has no APK asset, skip."
+            exit 0
+          fi
+
+          mkdir -p output/downloads
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            "$apk_url" \
+            -o "output/downloads/$apk_name"
+
+          cp "output/downloads/$apk_name" "output/downloads/smdj-gd-latest.apk"
+          echo "Downloaded APK: output/downloads/$apk_name"
+
+          release_tag=$(echo "$release_json" | jq -r '.tag_name // ""')
+          release_ver=${release_tag#v}
+          if [ -z "$release_ver" ] || [ "$release_ver" = "$release_tag" ]; then
+            release_ver="1.0.0"
+          fi
+
+          if [ -f "output/version.json" ]; then
+            tmp_json=$(mktemp)
+            jq --arg ver "$release_ver" --arg apk "downloads/smdj-gd-latest.apk" \
+              '.version=$ver | .apk_version=$ver | .apk_file=$apk' \
+              output/version.json > "$tmp_json" && mv "$tmp_json" output/version.json
+          else
+            cat > output/version.json <<EOF
+{
+  "version": "$release_ver",
+  "apk_version": "$release_ver",
+  "apk_file": "downloads/smdj-gd-latest.apk"
+}
+EOF
+          fi
+
+      - name: Ensure headers include APK mime/cors
+        shell: bash
+        run: |
+          mkdir -p output
+          touch output/_headers
+
+          if ! grep -q '^/\*\.apk$' output/_headers; then
+            cat >> output/_headers <<'EOF'
+
+/*.apk
+  Access-Control-Allow-Origin: *
+  Content-Type: application/vnd.android.package-archive
+EOF
+          fi
+
+      - name: Upload Pages artifact for GitHub Pages fallback
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: output
+
+      - name: Ensure Cloudflare Pages project exists
+        id: cf_prepare
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Cloudflare secrets missing, skip Cloudflare deploy and keep GitHub Pages fallback."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+          list_resp=$(curl -fsSL \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects")
+
+          exists=$(echo "$list_resp" | jq -r --arg n "$CF_PROJECT_NAME" '.result[]?.name | select(. == $n)' | head -n 1)
+          if [ "$exists" = "$CF_PROJECT_NAME" ]; then
+            echo "Cloudflare Pages project exists: $CF_PROJECT_NAME"
+            exit 0
+          fi
+
+          echo "Creating Cloudflare Pages project: $CF_PROJECT_NAME"
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects" \
+            --data "{\"name\":\"$CF_PROJECT_NAME\",\"production_branch\":\"main\"}" > /tmp/cf_create_project.json
+
+          success=$(jq -r '.success' /tmp/cf_create_project.json)
+          if [ "$success" != "true" ]; then
+            echo "Cloudflare project creation failed"
+            cat /tmp/cf_create_project.json
+            exit 1
+          fi
+
+      - name: Deploy to Cloudflare Pages (retry)
+        if: steps.cf_prepare.outputs.enabled == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          max_retry=3
+          attempt=1
+          until [ $attempt -gt $max_retry ]
+          do
+            echo "Cloudflare deploy attempt $attempt/$max_retry"
+            if npx wrangler@3 pages deploy output --project-name "$CF_PROJECT_NAME" --branch production; then
+              echo "Cloudflare deployment succeeded"
+              break
+            fi
+
+            if [ $attempt -eq $max_retry ]; then
+              echo "Cloudflare deployment failed after retries"
+              exit 1
+            fi
+
+            attempt=$((attempt + 1))
+            sleep 5
+          done
+
+  deploy-github-pages:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy-cloudflare
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

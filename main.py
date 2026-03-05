@@ -9,6 +9,7 @@ import os
 import sys
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 from converter import EPUBToHTMLConverter
 
@@ -16,7 +17,7 @@ from converter import EPUBToHTMLConverter
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="EPUB -> HTML + TTS + PWA 阅读器 (v3.6.7)")
     p.add_argument("epub_file", nargs="?", default=None, help="单个 EPUB 文件路径 (留空则扫描 resource 文件夹)")
-    p.add_argument("-o", "--output")
+    p.add_argument("-o", "--output", help="输出目录；不传则默认输出到 output")
     p.add_argument("--resource-dir", default="resource", help="扫描 EPUB 的文件夹 (默认 resource)")
     p.add_argument("--auto-start-date")
     p.add_argument("--auto-start-page", type=int, default=0)
@@ -71,10 +72,30 @@ def collect_epub_files(args) -> list[str]:
 
 def main() -> None:
     args = build_parser().parse_args()
+
+    # 执行时可交互输入开始日期（格式: YYYY-MM-DD）
+    if not args.auto_start_date:
+        user_input = input("请输入开始日期(YYYY-MM-DD，回车跳过): ").strip()
+        if user_input:
+            try:
+                datetime.strptime(user_input, "%Y-%m-%d")
+            except ValueError:
+                print("❌ 日期格式错误，请使用 YYYY-MM-DD")
+                sys.exit(1)
+            args.auto_start_date = user_input
+
     epub_files = collect_epub_files(args)
+    default_output_root = Path("output")
 
     for epub_file in epub_files:
-        output_dir = args.output if (args.output and len(epub_files) == 1) else None
+        if args.output:
+            output_dir = args.output
+        else:
+            # 默认输出到 output；批量转换时按书名建子目录防止覆盖
+            if len(epub_files) == 1:
+                output_dir = str(default_output_root)
+            else:
+                output_dir = str(default_output_root / Path(epub_file).stem)
         conv = EPUBToHTMLConverter(
             epub_path=epub_file,
             output_dir=output_dir,
