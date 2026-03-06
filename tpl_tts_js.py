@@ -115,38 +115,49 @@ class TTSDock {
   /* 用 Range 在 el 内包住 text，插入 <mark class="tts-active"> */
   _wrapSentence(el, text) {
     try {
+      /* 在 el.textContent 全文中定位句子的字符偏移 */
+      const full = el.textContent;
+      const start = full.indexOf(text);
+      if (start === -1) { el.classList.add('tts-active'); return null; }
+      const end = start + text.length;
+
+      /* 将字符偏移映射回具体的文本节点 */
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      let node;
+      const range = document.createRange();
+      let node, off = 0, startSet = false;
       while ((node = walker.nextNode())) {
-        const idx = node.textContent.indexOf(text);
-        if (idx !== -1) {
-          const range = document.createRange();
-          range.setStart(node, idx);
-          range.setEnd(node, idx + text.length);
-          const mark = document.createElement('mark');
-          mark.className = 'tts-active';
-          range.surroundContents(mark);
-          this._activeMark = mark;
-          return mark;
+        const len = node.textContent.length;
+        if (!startSet && off + len > start) {
+          range.setStart(node, start - off);
+          startSet = true;
         }
+        if (startSet && off + len >= end) {
+          range.setEnd(node, end - off);
+          break;
+        }
+        off += len;
       }
-    } catch (_) {}
-    /* 跨元素边界时退回整段高亮 */
-    el.classList.add('tts-active');
-    return null;
+      if (!startSet) { el.classList.add('tts-active'); return null; }
+
+      /* extractContents + insertNode 支持跨内联元素的 range，不会抛异常 */
+      const mark = document.createElement('mark');
+      mark.className = 'tts-active';
+      mark.appendChild(range.extractContents());
+      range.insertNode(mark);
+      this._activeMark = mark;
+      return mark;
+    } catch (_) {
+      el.classList.add('tts-active');
+      return null;
+    }
   }
 
-  /* 拆除 <mark>，恢复原始 DOM */
+  /* 拆除 <mark>，把子节点原地还原 */
   _unwrapMark() {
-    if (this._activeMark) {
-      const p = this._activeMark.parentNode;
-      if (p) {
-        while (this._activeMark.firstChild) p.insertBefore(this._activeMark.firstChild, this._activeMark);
-        p.removeChild(this._activeMark);
-        try { p.normalize(); } catch (_) {}
-      }
-      this._activeMark = null;
-    }
+    if (!this._activeMark) return;
+    const children = [...this._activeMark.childNodes];
+    this._activeMark.replaceWith(...children);
+    this._activeMark = null;
   }
 
   restore() {
@@ -317,14 +328,16 @@ class TTSDock {
 
   clearHighlight() {
     this._unwrapMark();
-    document.querySelectorAll('.tts-active').forEach(e => {
-      if (e.tagName === 'MARK') {
-        const p = e.parentNode;
-        if (p) { while (e.firstChild) p.insertBefore(e.firstChild, e); p.removeChild(e); try { p.normalize(); } catch (_) {} }
-      } else {
-        e.classList.remove('tts-active');
-      }
+    document.querySelectorAll('mark.tts-active').forEach(e => {
+      const children = [...e.childNodes]; e.replaceWith(...children);
     });
+    document.querySelectorAll('.tts-active').forEach(e => e.classList.remove('tts-active'));
+  }
+
+  _fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
   updateProgress() {
@@ -332,13 +345,16 @@ class TTSDock {
     if (!n) {
       this.fill   && (this.fill.style.width  = '0%');
       this.handle && (this.handle.style.left = '0%');
-      this.text   && (this.text.textContent  = '0 / 0');
+      this.text   && (this.text.textContent  = '0:00 / 0:00');
       return;
     }
     const pct = n === 1 ? 100 : (this.index / (n - 1)) * 100;
     this.fill   && (this.fill.style.width  = pct + '%');
     this.handle && (this.handle.style.left = pct + '%');
-    this.text   && (this.text.textContent  = `${this.index + 1} / ${n}`);
+    const CPS = 4.5;  /* 汉字/秒（rate=1 基准） */
+    const elapsed = this.units.slice(0, this.index).reduce((s, u) => s + u.text.length, 0) / (CPS * this.rate);
+    const total   = this.units.reduce((s, u) => s + u.text.length, 0) / (CPS * this.rate);
+    this.text   && (this.text.textContent  = `${this._fmt(elapsed)} / ${this._fmt(total)}`);
   }
 
   updateRate() {
