@@ -259,8 +259,8 @@ class EPUBToHTMLConverter:
         if not self.no_fonts_css:
             self.assets_css_dir.joinpath("fonts.css").write_text(FONTS_CSS_TEMPLATE,encoding="utf-8")
         self.assets_css_dir.joinpath("extra.css").write_text("/* EPUB 内置 CSS 合并后写入 */",encoding="utf-8")
-        reader_js=READER_JS.replace("/*__DELAY_SEGMENT__*/","false" if self.presegment_tts else "true")
-        self.assets_js_dir.joinpath("reader.js").write_text(reader_js,encoding="utf-8")
+        reader_js = READER_JS
+        self.assets_js_dir.joinpath("reader.js").write_text(reader_js, encoding="utf-8")
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("app-update.js").write_text(APP_UPDATE_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("sw-register.js").write_text(SW_REGISTER_JS,encoding="utf-8")
@@ -390,7 +390,7 @@ class EPUBToHTMLConverter:
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>{html.escape(page_title)}</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#3366ff" />
+<meta name="theme-color" content="#ffffff" />
 <link rel="stylesheet" href="assets/css/core.css" />
 <link rel="stylesheet" href="assets/css/themes.css" />
 <link rel="stylesheet" href="assets/css/extra.css" />
@@ -451,8 +451,8 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
       <label>主题</label>
       <div class="chips" id="theme-choices">
         <button data-theme="auto" class="chip active">跟随系统</button>
-        <button data-theme="light" class="chip">浅色</button>
-        <button data-theme="dark" class="chip">深色</button>
+        <button data-theme="light" class="chip">原色</button>
+        <button data-theme="eyecare" class="chip">护眼</button>
       </div>
     </div>
     <div class="setting">
@@ -488,11 +488,15 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
     def _tts_dock_html(self)->str:
         return """<div class="tts-dock" id="tts-dock" data-visible="false">
   <div class="tts-dock-main">
-    <button class="dock-btn" id="tts-btn-prev" title="上一句">⏮️</button>
     <button class="dock-btn play" id="tts-btn-play" title="播放 / 暂停">▶️</button>
-    <button class="dock-btn" id="tts-btn-next" title="下一句">⏭️</button>
-    <button class="dock-btn" id="tts-btn-stop" title="停止">■</button>
-    <button class="dock-btn" id="tts-btn-mode" title="连续/单页">🔂</button>
+    <select class="tts-rate-select" id="tts-rate-select" title="朗读倍率">
+      <option value="0.5">0.5×</option>
+      <option value="0.8">0.8×</option>
+      <option value="1" selected>1.0×</option>
+      <option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option>
+      <option value="2">2.0×</option>
+    </select>
     <button class="dock-btn small" id="tts-btn-close" title="隐藏朗读">✕</button>
   </div>
   <div class="tts-progress-row">
@@ -650,17 +654,36 @@ async function setupAdaptiveActions() {
     });
 
     clearBtn.addEventListener('click', async () => {
+        if (!confirm('将清除本站所有缓存、本地设置与浏览记录，确认继续？')) return;
         const infoBox2 = document.getElementById('cache-info');
         const pctEl2 = document.getElementById('cache-pct');
         const fillEl2 = document.getElementById('cache-progress-fill');
         const statusBox2 = document.getElementById('cache-status-box');
         if (statusBox2) statusBox2.style.display = 'block';
         if (infoBox2) infoBox2.textContent = '清理中…';
-        const ok = await cxClearCache();
-        if (!ok) { if (infoBox2) infoBox2.textContent = '清理失败'; return; }
-        if (infoBox2) infoBox2.textContent = '已清理，重新缓存中…';
         if (pctEl2) pctEl2.textContent = '0%';
         if (fillEl2) fillEl2.style.width = '0%';
+
+        // 1. SW Cache Storage（让 SW 自行清并重新预缓存）
+        const ok = await cxClearCache();
+
+        // 2. localStorage 全清
+        try { localStorage.clear(); } catch (_) {}
+
+        // 3. sessionStorage 全清
+        try { sessionStorage.clear(); } catch (_) {}
+
+        // 4. IndexedDB 数据库枚举删除
+        try {
+            const dbs = await indexedDB.databases?.() || [];
+            await Promise.all(dbs.map(d => new Promise((res, rej) => {
+                const r = indexedDB.deleteDatabase(d.name);
+                r.onsuccess = res; r.onerror = rej;
+            })));
+        } catch (_) {}
+
+        if (!ok) { if (infoBox2) infoBox2.textContent = '清理完成（SW 清理失败，已清理本地数据）'; return; }
+        if (infoBox2) infoBox2.textContent = '已全部清理，重新缓存中…';
         // 等 SW fullPrecache 完成后（cxClearCache 等它结束才返回），再刷新进度
         const info2 = await cxCacheInfo().catch(() => ({}));
         if (info2.available) {
@@ -754,7 +777,7 @@ window.addEventListener('load', () => {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>目录</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#3366ff" />
+<meta name="theme-color" content="#ffffff" />
 <link rel="stylesheet" href="assets/css/core.css" />
 <link rel="stylesheet" href="assets/css/themes.css" />
 <link rel="stylesheet" href="assets/css/extra.css" />
@@ -865,7 +888,7 @@ window.APP_VERSION="{self.app_version}";
             "start_url": "./index.html",
             "display": "standalone",
             "background_color": "#ffffff",
-            "theme_color": "#3366ff",
+            "theme_color": "#ffffff",
             "lang":"zh-CN",
             "icons":[
                 {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},

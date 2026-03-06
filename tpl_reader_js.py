@@ -8,7 +8,6 @@ READER_JS = r"""
 const APP_VER = '3.6.7';
 const LS_KEY = 'reader.settings.v3.6.3';
 const SCROLL_PREFIX = 'reader.scroll.';
-const DEFER_TTS_SEGMENT = /*__DELAY_SEGMENT__*/;
 
 const FONT_FAMILIES = {
   sans:     '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Microsoft YaHei","Noto Sans CJK SC",sans-serif',
@@ -51,12 +50,12 @@ function ensureOverrideStyle() {
 /* ---- 主题切换 ---- */
 function applyTheme() {
   const html = document.documentElement;
-  html.classList.remove('dark');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (st.theme === 'dark' || (st.theme === 'auto' && prefersDark)) {
-    html.classList.add('dark');
-  }
+  html.classList.remove('eyecare');
+  if (st.theme === 'eyecare') html.classList.add('eyecare');
   html.setAttribute('data-theme', st.theme);
+  /* 沉浸式状态栏：让系统状态栏与页面背景同色 */
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.setAttribute('content', st.theme === 'eyecare' ? '#c7dfc5' : '#ffffff');
 }
 
 /* ---- 同步 chip 选中状态 ---- */
@@ -127,7 +126,6 @@ function initControls() {
       st.ttsVisible = (ch.dataset.tts === 'show');
       toggleTTSVisibility(st.ttsVisible, true);
       saveSettings(); syncChips();
-      if (st.ttsVisible && DEFER_TTS_SEGMENT) window.dispatchEvent(new CustomEvent('tts-lazy-segment'));
     }));
 
   // 设置面板开关
@@ -135,47 +133,62 @@ function initControls() {
   const openBtn = document.getElementById('open-settings');
   const closeBtn = document.getElementById('close-settings');
 
+  let _cachePoller = null;
+
+  function queryCacheInfo() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (!reg || !reg.active) return;
+      const ch = new MessageChannel();
+      ch.port1.onmessage = ev => {
+        const info      = ev.data || {};
+        const infoBox   = document.getElementById('cache-info');
+        const pctEl     = document.getElementById('cache-pct');
+        const fillEl    = document.getElementById('cache-progress-fill');
+        const statusBox = document.getElementById('cache-status-box');
+        if (statusBox) statusBox.style.display = 'block';
+        if (!info.available) {
+          if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
+          return;
+        }
+        const total  = (info.pages?.total  || 0) + (info.statics?.total  || 0) + (info.others?.total  || 0);
+        const cached = (info.pages?.cached || 0) + (info.statics?.cached || 0) + (info.others?.cached || 0);
+        const pct    = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
+        if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (pctEl)   pctEl.textContent   = pct + '%';
+        if (fillEl)  fillEl.style.width  = pct + '%';
+      };
+      reg.active.postMessage({ type: 'CACHE_INFO' }, [ch.port2]);
+    }).catch(() => {});
+  }
+
+  function startCachePoller() {
+    queryCacheInfo();
+    _cachePoller = setInterval(queryCacheInfo, 2000);
+  }
+
+  function stopCachePoller() {
+    if (_cachePoller) { clearInterval(_cachePoller); _cachePoller = null; }
+  }
+
+  function closePanel() {
+    panel.setAttribute('data-open',   'false');
+    panel.setAttribute('aria-hidden', 'true');
+    stopCachePoller();
+  }
+
   openBtn && openBtn.addEventListener('click', () => {
     panel.setAttribute('data-open',   'true');
     panel.setAttribute('aria-hidden', 'false');
-    // 查询缓存状态
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then(reg => {
-        if (!reg || !reg.active) return;
-        const ch = new MessageChannel();
-        ch.port1.onmessage = ev => {
-          const info       = ev.data || {};
-          const infoBox    = document.getElementById('cache-info');
-          const pctEl      = document.getElementById('cache-pct');
-          const fillEl     = document.getElementById('cache-progress-fill');
-          const statusBox  = document.getElementById('cache-status-box');
-          if (statusBox) statusBox.style.display = 'block';
-          if (!info.available) {
-            if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
-            return;
-          }
-          const total  = (info.pages?.total  || 0) + (info.statics?.total  || 0) + (info.others?.total  || 0);
-          const cached = (info.pages?.cached || 0) + (info.statics?.cached || 0) + (info.others?.cached || 0);
-          const pct    = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-          if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  期望 ${total} 个  已缓存 ${cached} 个`;
-          if (pctEl)   pctEl.textContent   = pct + '%';
-          if (fillEl)  fillEl.style.width  = pct + '%';
-        };
-        reg.active.postMessage({ type: 'CACHE_INFO' }, [ch.port2]);
-      }).catch(() => {});
-    }
+    startCachePoller();
   });
 
-  closeBtn && closeBtn.addEventListener('click', () => {
-    panel.setAttribute('data-open',   'false');
-    panel.setAttribute('aria-hidden', 'true');
-  });
+  closeBtn && closeBtn.addEventListener('click', () => closePanel());
 
   document.addEventListener('click', e => {
     if (panel && panel.getAttribute('data-open') === 'true'
         && !panel.contains(e.target) && e.target !== openBtn) {
-      panel.setAttribute('data-open',   'false');
-      panel.setAttribute('aria-hidden', 'true');
+      closePanel();
     }
   });
 }
@@ -546,11 +559,7 @@ function afterSwap(url, entry) {
   reinitDynamicFeatures();
 }
 
-function reinitDynamicFeatures() {
-  if (st.ttsVisible && DEFER_TTS_SEGMENT) {
-    window.dispatchEvent(new CustomEvent('tts-lazy-segment'));
-  }
-}
+function reinitDynamicFeatures() {}
 
 /* ---- History 后退 ---- */
 window.addEventListener('popstate', () => {
