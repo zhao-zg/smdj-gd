@@ -86,19 +86,19 @@ if errorlevel 1 (
 )
 
 git add app_config.json
-git commit -m "chore: bump version to %RAW_VER%"
+git diff --cached --quiet
 if errorlevel 1 (
-  echo Failed to commit version bump.
-  exit /b 1
-)
-
-echo Pushing version bump commit...
-git push origin HEAD
-if errorlevel 1 (
-  echo Failed to push commit. Rolling back...
-  git reset --soft HEAD~1
-  git restore app_config.json
-  exit /b 1
+  git commit -m "chore: bump version to %RAW_VER%"
+  echo Pushing version bump commit...
+  git push origin HEAD
+  if errorlevel 1 (
+    echo Failed to push commit. Rolling back...
+    git reset --soft HEAD~1
+    git restore app_config.json
+    exit /b 1
+  )
+) else (
+  echo Version already at %RAW_VER%, skipping commit.
 )
 
 echo Creating tag %TAG% on current HEAD...
