@@ -29,7 +29,6 @@ CORE_CSS_BASE = r"""
   --shadow-level:0 4px 22px -6px rgba(0,0,0,.22);
   --shadow-small:0 2px 4px rgba(0,0,0,.06);
   --transition-fast:.25s;
-  --page-transition-ms:220ms;
 }
 html[data-font="serif"]{--font-base:var(--font-serif);}
 html[data-font="dyslexic"]{--font-base:var(--font-dyslexic);}
@@ -70,34 +69,7 @@ html.dark .app-bar{background:rgba(28,30,34,.82);border-bottom-color:rgba(255,25
 .nav-btn.disabled{opacity:.35;pointer-events:none;}
 .top-progress{position:absolute;left:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--c-accent),rgba(var(--c-accent-rgb),.35));width:0%;transition:width .12s linear;}
 
-/* 页面过渡动画容器与类 */
-#page-shell{position:relative;isolation:isolate;}
-.page-view{will-change:transform,opacity;}
-.page-slide-enter,
-.page-slide-exit{position:relative;}
-.page-slide-exit{z-index:1;}
-.page-slide-enter{z-index:2;}
-.page-slide-enter.slide-from-right{animation:slideInFromRight var(--page-transition-ms) cubic-bezier(.4,.0,.2,1);}
-.page-slide-enter.slide-from-left{animation:slideInFromLeft var(--page-transition-ms) cubic-bezier(.4,.0,.2,1);}
-.page-slide-exit.slide-to-left{animation:slideOutToLeft var(--page-transition-ms) cubic-bezier(.4,.0,.2,1);}
-.page-slide-exit.slide-to-right{animation:slideOutToRight var(--page-transition-ms) cubic-bezier(.4,.0,.2,1);}
 
-@keyframes slideInFromRight{
-  0%{transform:translateX(28px);opacity:0;}
-  100%{transform:translateX(0);opacity:1;}
-}
-@keyframes slideInFromLeft{
-  0%{transform:translateX(-28px);opacity:0;}
-  100%{transform:translateX(0);opacity:1;}
-}
-@keyframes slideOutToLeft{
-  0%{transform:translateX(0);opacity:1;}
-  100%{transform:translateX(-28px);opacity:0;}
-}
-@keyframes slideOutToRight{
-  0%{transform:translateX(0);opacity:1;}
-  100%{transform:translateX(28px);opacity:0;}
-}
 
 /* 设置面板等 */
 .settings-panel{position:fixed;top:0;right:0;height:100dvh;width:min(360px,90vw);background:var(--c-bg);border-left:1px solid var(--c-border);box-shadow:-4px 0 28px -8px rgba(0,0,0,.25);transform:translateX(100%);transition:transform .45s cubic-bezier(.65,.05,.36,1);z-index:120;display:flex;flex-direction:column;}
@@ -184,7 +156,7 @@ function ensureOverrideStyle(){if(!overrideStyle){overrideStyle=document.createE
 function applyTheme(){const html=document.documentElement;html.classList.remove('dark');if(st.theme!=='auto')html.classList.add(st.theme);html.setAttribute('data-theme',st.theme);}
 function syncChips(){document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.font===st.font));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.theme===st.theme));const showBtn=document.querySelector('#tts-toggle-chips [data-tts=show]');const hideBtn=document.querySelector('#tts-toggle-chips [data-tts=hide]');if(showBtn&&hideBtn){showBtn.classList.toggle('active',st.ttsVisible);hideBtn.classList.toggle('active',!st.ttsVisible);}if(window.TTS_SUPPORTED===false){document.querySelectorAll('#tts-toggle-chips .chip').forEach(c=>{c.classList.add('disabled');c.style.opacity='.45';c.style.pointerEvents='none';});}const fsLabel=document.getElementById('font-size-label');if(fsLabel)fsLabel.textContent=st.fontSize+'px';const lhLabel=document.getElementById('line-height-label');if(lhLabel)lhLabel.textContent=st.lineHeight.toFixed(2);}
 function applySettings(){document.documentElement.style.setProperty('--fs-base',st.fontSize+'px');document.documentElement.style.setProperty('--lh-base',st.lineHeight);document.documentElement.dataset.font=st.font;applyTheme();ensureOverrideStyle();syncChips();toggleTTSVisibility(st.ttsVisible,false);}
-function initControls(){const fs=document.getElementById('font-size-range');fs&&fs.addEventListener('input',()=>{st.fontSize=parseInt(fs.value,10);applySettings();saveSettings();});const lh=document.getElementById('line-height-range');lh&&lh.addEventListener('input',()=>{st.lineHeight=parseFloat(lh.value);applySettings();saveSettings();});document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.font=ch.dataset.font;applySettings();saveSettings();}));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.theme=ch.dataset.theme;applySettings();saveSettings();}));document.querySelectorAll('#tts-toggle-chips .chip').forEach(ch=>ch.addEventListener('click',()=>{if(window.TTS_SUPPORTED===false)return;st.ttsVisible=(ch.dataset.tts==='show');toggleTTSVisibility(st.ttsVisible,true);saveSettings();syncChips();if(st.ttsVisible&&DEFER_TTS_SEGMENT)window.dispatchEvent(new CustomEvent('tts-lazy-segment'));}));const panel=document.getElementById('settings-panel');const openBtn=document.getElementById('open-settings');const closeBtn=document.getElementById('close-settings');openBtn&&openBtn.addEventListener('click',()=>{panel.setAttribute('data-open','true');panel.setAttribute('aria-hidden','false');});closeBtn&&closeBtn.addEventListener('click',()=>{panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');});document.addEventListener('click',e=>{if(panel&&panel.getAttribute('data-open')==='true'&&!panel.contains(e.target)&&e.target!==openBtn){panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');}});}
+function initControls(){const fs=document.getElementById('font-size-range');fs&&fs.addEventListener('input',()=>{st.fontSize=parseInt(fs.value,10);applySettings();saveSettings();});const lh=document.getElementById('line-height-range');lh&&lh.addEventListener('input',()=>{st.lineHeight=parseFloat(lh.value);applySettings();saveSettings();});document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.font=ch.dataset.font;applySettings();saveSettings();}));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.theme=ch.dataset.theme;applySettings();saveSettings();}));document.querySelectorAll('#tts-toggle-chips .chip').forEach(ch=>ch.addEventListener('click',()=>{if(window.TTS_SUPPORTED===false)return;st.ttsVisible=(ch.dataset.tts==='show');toggleTTSVisibility(st.ttsVisible,true);saveSettings();syncChips();if(st.ttsVisible&&DEFER_TTS_SEGMENT)window.dispatchEvent(new CustomEvent('tts-lazy-segment'));}));const panel=document.getElementById('settings-panel');const openBtn=document.getElementById('open-settings');const closeBtn=document.getElementById('close-settings');openBtn&&openBtn.addEventListener('click',()=>{panel.setAttribute('data-open','true');panel.setAttribute('aria-hidden','false');if('serviceWorker' in navigator)navigator.serviceWorker.getRegistration().then(reg=>{if(!reg||!reg.active)return;const ch=new MessageChannel();ch.port1.onmessage=ev=>{const info=ev.data||{};const infoBox=document.getElementById('cache-info');if(!infoBox||!info.available)return;const total=(info.pages?.total||0)+(info.statics?.total||0)+(info.others?.total||0);const cached=(info.pages?.cached||0)+(info.statics?.cached||0)+(info.others?.cached||0);infoBox.textContent=`版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;};reg.active.postMessage({type:'CACHE_INFO'},[ch.port2]);}).catch(()=>{});});closeBtn&&closeBtn.addEventListener('click',()=>{panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');});document.addEventListener('click',e=>{if(panel&&panel.getAttribute('data-open')==='true'&&!panel.contains(e.target)&&e.target!==openBtn){panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');}});}
 function toggleTTSVisibility(show){const dock=document.getElementById('tts-dock');if(!dock)return;if(window.TTS_SUPPORTED===false){dock.setAttribute('data-visible','false');return;}dock.setAttribute('data-visible',show?'true':'false');}
 function handleScroll(){const y=window.scrollY||document.documentElement.scrollTop;const appBar=document.querySelector('.app-bar');if(appBar){const goingDown=y>lastScrollY;if(y>120&&goingDown)appBar.setAttribute('data-hidden','true');else appBar.removeAttribute('data-hidden');}lastScrollY=y;updateProgress();toggleBackTop(y);scheduleBarShow();}
 function scheduleBarShow(){const appBar=document.querySelector('.app-bar');clearTimeout(hideTimer);hideTimer=setTimeout(()=>appBar&&appBar.removeAttribute('data-hidden'),1600);}
@@ -208,13 +180,13 @@ function trimCache(){if(pageCache.size<=historyStackLimit)return;const firstKey=
 function installInitialPrefetch(){if(!window.PAGE_INFO)return;if(window.PAGE_INFO.prevPage)prefetchLink(new URL(window.PAGE_INFO.prevPage,location.href).href);if(window.PAGE_INFO.nextPage)prefetchLink(new URL(window.PAGE_INFO.nextPage,location.href).href);}
 function customNavigate(url,dir){if(!url)return;const abs=new URL(url,location.href).href;smoothTransitionTo(abs,dir,true);}
 function smoothTransitionTo(url,dir='next',allowFetch=true){if(pageCache.has(url)){doPageSwap(url,pageCache.get(url),dir);return;}if(!allowFetch){location.href=url;return;}fetch(url,{credentials:'same-origin'}).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(html=>{const doc=new DOMParser().parseFromString(html,'text/html');const content=doc.querySelector('#reader-content');let pageInfo=null;for(const s of doc.querySelectorAll('script')){const txt=s.textContent||'';if(txt.includes('window.PAGE_INFO')){try{const m=txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);if(m){pageInfo=eval('('+m[1]+')');break;}}catch(_){}}}if(content&&pageInfo){const entry={doc,contentHTML:content.innerHTML,title:doc.title,pageInfo};pageCache.set(url,entry);trimCache();doPageSwap(url,entry,dir);}else{location.href=url;}}).catch(()=>location.href=url);}
-function doPageSwap(url,entry,dir){saveScrollImmediate();const oldView=document.getElementById('reader-content');if(!oldView){location.href=url;return;}ensurePageShell();const durationMs=parseInt(localStorage.getItem('pageTransitionMs')||'250',10);document.documentElement.style.setProperty('--page-transition-ms',durationMs+'ms');const newNode=oldView.cloneNode(false);newNode.innerHTML=entry.contentHTML;newNode.id='reader-content';newNode.dataset.pageIndex=entry.pageInfo.current;oldView.classList.add('page-slide-exit',dir==='next'?'slide-to-left':'slide-to-right');newNode.classList.add('page-slide-enter',dir==='next'?'slide-from-right':'slide-from-left','page-view');oldView.after(newNode);document.title=entry.title;window.PAGE_INFO={current:entry.pageInfo.current,total:entry.pageInfo.total,prevPage:entry.pageInfo.prevPage,nextPage:entry.pageInfo.nextPage};updateNavBarByPageInfo(window.PAGE_INFO);if(url!==currentURL){history.pushState({url},"",url);currentURL=url;}setTimeout(()=>{oldView.remove();newNode.classList.remove('page-slide-enter','slide-from-right','slide-from-left');afterSwap(url,entry);},durationMs);}
-function ensurePageShell(){let shell=document.getElementById('page-shell');if(shell)return shell;const main=document.getElementById('reader-content');if(!main)return null;shell=document.createElement('div');shell.id='page-shell';main.parentNode.insertBefore(shell,main);main.classList.add('page-view');shell.appendChild(main);return shell;}
+function doPageSwap(url,entry,dir){saveScrollImmediate();const oldView=document.getElementById('reader-content');if(!oldView){location.href=url;return;}const newNode=oldView.cloneNode(false);newNode.innerHTML=entry.contentHTML;newNode.id='reader-content';newNode.dataset.pageIndex=entry.pageInfo.current;oldView.replaceWith(newNode);document.title=entry.title;window.PAGE_INFO={current:entry.pageInfo.current,total:entry.pageInfo.total,prevPage:entry.pageInfo.prevPage,nextPage:entry.pageInfo.nextPage};updateNavBarByPageInfo(window.PAGE_INFO);if(url!==currentURL){history.pushState({url},"",url);currentURL=url;}afterSwap(url,entry);}
+function ensurePageShell(){}
 function afterSwap(url,entry){scrollTo(0,0);restoreScroll();updateProgress();installInitialPrefetch();reinitDynamicFeatures();}
 function reinitDynamicFeatures(){if(st.ttsVisible&&DEFER_TTS_SEGMENT){window.dispatchEvent(new CustomEvent('tts-lazy-segment'));}}
 window.addEventListener('popstate',()=>{const target=location.href;if(pageCache.has(target)){doPageSwap(target,pageCache.get(target),'prev');}else{smoothTransitionTo(target,'prev',true);}});
 function initSWDisableCheck(){const urlParams=new URLSearchParams(location.search);if(urlParams.get('no-sw')==='1'){localStorage.setItem('disableSW','1');if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}console.log('[SW] 已禁用 (参数 no-sw=1)');}}
-document.addEventListener('DOMContentLoaded',()=>{initSWDisableCheck();loadSettings();applySettings();initControls();initBackTop();initKeys();motionPref();systemThemeWatcher();restoreScroll();updateProgress();initTodayLinks();initSwipe();installInitialPrefetch();ensurePageShell();updateNavBarByPageInfo(window.PAGE_INFO);});
+document.addEventListener('DOMContentLoaded',()=>{initSWDisableCheck();loadSettings();applySettings();initControls();initBackTop();initKeys();motionPref();systemThemeWatcher();restoreScroll();updateProgress();initTodayLinks();initSwipe();installInitialPrefetch();updateNavBarByPageInfo(window.PAGE_INFO);});
 window.addEventListener('scroll',()=>{handleScroll();saveScrollThrottle();},{passive:true});
 window.addEventListener('beforeunload',()=>saveScrollThrottle());
 })();
@@ -223,20 +195,16 @@ window.addEventListener('beforeunload',()=>saveScrollThrottle());
 APP_UPDATE_JS = r"""
 /* APK self-update for Capacitor Android */
 (() => {
-  const UPDATE_ENDPOINTS = [
-    new URL('version.json', window.location.href).href,
-    './version.json',
-    'https://smdj-gd.pages.dev/version.json',
-    'https://zhao-zg.github.io/smdj-gd/version.json',
+  const REMOTE_ENDPOINTS = [
+    'https://smdj-gd.zhaozg.cloudns.org/version.json',
+    'https://smdj-gd.07170501.xyz/version.json',
   ];
+  // 原生 APK 直接访问远端；PWA/浏览器先读本地缓存版
+  const UPDATE_ENDPOINTS = isNative()
+    ? REMOTE_ENDPOINTS
+    : [new URL('version.json', window.location.href).href, './version.json', ...REMOTE_ENDPOINTS];
   const APK_PATH_FALLBACK = 'downloads/smdj-gd-latest.apk';
   const CHUNK_SIZE = 256 * 1024;
-
-  const mirrorWrap = [
-    (u) => u,
-    (u) => `https://gh-proxy.com/${u}`,
-    (u) => `https://ghproxy.net/${u}`,
-  ];
 
   function log(...args) {
     if (localStorage.getItem('updateDebug') === '1') console.log('[APP-UPDATE]', ...args);
@@ -298,6 +266,8 @@ APP_UPDATE_JS = r"""
         if (info && info.version) return String(info.version);
       }
     } catch (_) {}
+    // 由构建时注入的版本号作为兜底（优先于 localStorage）
+    if (window.APP_VERSION) return String(window.APP_VERSION);
     return localStorage.getItem('app.localVersion') || '0.0.0';
   }
 
@@ -318,9 +288,7 @@ APP_UPDATE_JS = r"""
     files.forEach((f) => direct.push(toAbsolute(f, sourceUrl)));
 
     direct.forEach((u) => {
-      if (/^https?:\/\//i.test(u)) {
-        mirrorWrap.forEach((fn) => candidates.push(fn(u)));
-      }
+      if (/^https?:\/\//i.test(u)) candidates.push(u);
     });
     return [...new Set(candidates)];
   }
@@ -923,16 +891,21 @@ self.addEventListener('message', (event) => {
           otherCache.keys(),
         ]);
         const targets = splitPrecacheTargets();
-        const missingPages = targets.pageTargets.filter(async p => !(await pageCache.match(p))).length;
+        // 统计期望列表里实际已缓存的数量（而非 cache 桶的总条目数）
+        const [matchedPages, matchedStatics, matchedOthers] = await Promise.all([
+          Promise.all(targets.pageTargets.map(p => pageCache.match(p))).then(rs => rs.filter(Boolean).length),
+          Promise.all(targets.staticTargets.map(p => staticCache.match(p))).then(rs => rs.filter(Boolean).length),
+          Promise.all(targets.otherTargets.map(p => otherCache.match(p))).then(rs => rs.filter(Boolean).length),
+        ]);
         port.postMessage({
           ok: true,
           available: true,
           version: VERSION,
           cacheCount: 3,
           entryCount: pageKeys.length + staticKeys.length + otherKeys.length,
-          pages:   { cached: pageKeys.length,   total: targets.pageTargets.length },
-          statics: { cached: staticKeys.length, total: targets.staticTargets.length },
-          others:  { cached: otherKeys.length,  total: targets.otherTargets.length },
+          pages:   { cached: matchedPages,   total: targets.pageTargets.length },
+          statics: { cached: matchedStatics, total: targets.staticTargets.length },
+          others:  { cached: matchedOthers,  total: targets.otherTargets.length },
         });
       } catch (e) {
         port.postMessage({ ok: false, available: true, error: String(e) });

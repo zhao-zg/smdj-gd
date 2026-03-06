@@ -110,12 +110,12 @@ jobs:
 
           if [ -f "output/version.json" ]; then
             tmp_json=$(mktemp)
-            jq --arg ver "$release_ver" --arg apk "downloads/smdj-gd-latest.apk" \
-              '.version=$ver | .apk_version=$ver | .apk_file=$apk' \
+            jq --arg ver "$release_ver" --arg apk "downloads/$apk_name" --arg apk_latest "downloads/smdj-gd-latest.apk" \
+              '.version=$ver | .apk_version=$ver | .apk_file=$apk | .apk_file_latest=$apk_latest' \
               output/version.json > "$tmp_json" && mv "$tmp_json" output/version.json
           else
-            jq -n --arg ver "$release_ver" --arg apk "downloads/smdj-gd-latest.apk" \
-              '{"version": $ver, "apk_version": $ver, "apk_file": $apk}' \
+            jq -n --arg ver "$release_ver" --arg apk "downloads/$apk_name" --arg apk_latest "downloads/smdj-gd-latest.apk" \
+              '{"version": $ver, "apk_version": $ver, "apk_file": $apk, "apk_file_latest": $apk_latest}' \
               > output/version.json
           fi
 

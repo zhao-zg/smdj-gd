@@ -86,6 +86,14 @@ class EPUBToHTMLConverter:
         self._toc_filename_set={'nav.xhtml','toc.xhtml','navigation.xhtml','toc.html','nav.html','contents.html','content.html'}
         self._link_map={}
 
+        # 读取应用版本（用于注入 window.APP_VERSION）
+        try:
+            import json as _json
+            _cfg = Path(__file__).resolve().parent / "app_config.json"
+            self.app_version = _json.loads(_cfg.read_text(encoding="utf-8")).get("version", "1.0.0")
+        except Exception:
+            self.app_version = "1.0.0"
+
     def convert(self):
         try:
             print("🚀 开始转换:", self.epub_path)
@@ -423,8 +431,7 @@ class EPUBToHTMLConverter:
 {self._tts_dock_html()}
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
 <script>
-window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};
-</script>
+window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};window.APP_VERSION="{self.app_version}";</script>
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
@@ -580,17 +587,27 @@ async function setupAdaptiveActions() {
     const installed = isStandalonePWA();
     const android = isAndroidBrowser();
 
-    if (cap || installed) {
+    if (cap) {
+        // APK 内无 Service Worker，不需要缓存/清缓存
+        updateBtn.style.display = 'inline-flex';
+    } else if (installed) {
         infoBtn.style.display = 'inline-flex';
         clearBtn.style.display = 'inline-flex';
-        if (cap) updateBtn.style.display = 'inline-flex';
     } else if (android) {
         downloadBtn.style.display = 'inline-flex';
         installBtn.style.display = 'inline-flex';
     }
 
     try {
-        const v = await fetch('./version.json', { cache: 'no-store' }).then((r) => r.json());
+        const vEndpoints = [
+            './version.json',
+            'https://smdj-gd.zhaozg.cloudns.org/version.json',
+            'https://smdj-gd.07170501.xyz/version.json',
+        ];
+        let v = null;
+        for (const ep of vEndpoints) {
+            try { v = await fetch(ep, { cache: 'no-store' }).then((r) => r.ok ? r.json() : null); if (v) break; } catch (_) {}
+        }
         if (v && v.apk_file) {
             downloadBtn.href = './' + v.apk_file;
             downloadBtn.setAttribute('download', '');
@@ -722,6 +739,7 @@ window.addEventListener('load', () => {
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
 <script>
 window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
+window.APP_VERSION="{self.app_version}";
 </script>
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
