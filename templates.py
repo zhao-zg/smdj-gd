@@ -202,7 +202,7 @@ function initSwipe(){if(localStorage.getItem('disableSwipe')==='1')return;const 
 document.addEventListener('click',e=>{const a=e.target.closest('a.nav-btn');if(!a)return;const role=a.dataset.nav;if(role==='prev'||role==='next'||role==='toc'){if(a.classList.contains('disabled'))return;const href=a.getAttribute('href');if(!href)return;e.preventDefault();customNavigate(href,role==='next'?'next':'prev');}});
 function updateNavBarByPageInfo(pageInfo){if(!pageInfo)return;const nav=document.querySelector('.nav');if(!nav)return;let prevBtn=nav.querySelector('[data-nav="prev"]');let nextBtn=nav.querySelector('[data-nav="next"]');let tocBtn=nav.querySelector('[data-nav="toc"]');if(!prevBtn)prevBtn=[...nav.querySelectorAll('a.nav-btn,span.nav-btn')].find(el=>el.textContent.trim()==='←');if(!nextBtn)nextBtn=[...nav.querySelectorAll('a.nav-btn,span.nav-btn')].find(el=>el.textContent.trim()==='→');if(!tocBtn)tocBtn=[...nav.querySelectorAll('a.nav-btn')].find(el=>el.textContent.trim()==='目录');if(pageInfo.prevPage){if(prevBtn&&prevBtn.tagName==='SPAN'){const a=document.createElement('a');a.className='nav-btn';a.textContent='←';a.dataset.nav='prev';prevBtn.replaceWith(a);prevBtn=a;}if(prevBtn){prevBtn.classList.remove('disabled');prevBtn.dataset.nav='prev';prevBtn.setAttribute('href',pageInfo.prevPage);prevBtn.removeAttribute('aria-hidden');}}else if(prevBtn){prevBtn.classList.add('disabled');prevBtn.removeAttribute('href');prevBtn.setAttribute('aria-hidden','true');prevBtn.dataset.nav='prev';}
 if(pageInfo.nextPage){if(nextBtn&&nextBtn.tagName==='SPAN'){const a=document.createElement('a');a.className='nav-btn';a.textContent='→';a.dataset.nav='next';nextBtn.replaceWith(a);nextBtn=a;}if(nextBtn){nextBtn.classList.remove('disabled');nextBtn.dataset.nav='next';nextBtn.setAttribute('href',pageInfo.nextPage);nextBtn.removeAttribute('aria-hidden');}}else if(nextBtn){nextBtn.classList.add('disabled');nextBtn.removeAttribute('href');nextBtn.setAttribute('aria-hidden','true');nextBtn.dataset.nav='next';}
-if(tocBtn){const correct=(pageInfo.current===-1)?'index.htm':'../index.htm';if(tocBtn.getAttribute('href')!=correct)tocBtn.setAttribute('href',correct);tocBtn.dataset.nav='toc';}}
+if(tocBtn){const correct=(pageInfo.current===-1)?'index.html':'../index.html';if(tocBtn.getAttribute('href')!=correct)tocBtn.setAttribute('href',correct);tocBtn.dataset.nav='toc';}}
 function prefetchLink(url){if(!url)return;if(localStorage.getItem('prefetchDisable')==='1')return;if(pageCache.has(url))return;logNav('prefetch',url);fetch(url,{credentials:'same-origin'}).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(html=>{const doc=new DOMParser().parseFromString(html,'text/html');const content=doc.querySelector('#reader-content');let pageInfo=null;for(const s of doc.querySelectorAll('script')){const txt=s.textContent||'';if(txt.includes('window.PAGE_INFO')){try{const m=txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);if(m){pageInfo=eval('('+m[1]+')');break;}}catch(_){}}}if(content&&pageInfo){pageCache.set(url,{doc,contentHTML:content.innerHTML,title:doc.title,pageInfo});trimCache();}}).catch(()=>{});}
 function trimCache(){if(pageCache.size<=historyStackLimit)return;const firstKey=pageCache.keys().next().value;pageCache.delete(firstKey);}
 function installInitialPrefetch(){if(!window.PAGE_INFO)return;if(window.PAGE_INFO.prevPage)prefetchLink(new URL(window.PAGE_INFO.prevPage,location.href).href);if(window.PAGE_INFO.nextPage)prefetchLink(new URL(window.PAGE_INFO.nextPage,location.href).href);}
@@ -708,7 +708,7 @@ function normalizeAssetPath(path){
   if(path === './' || path === '/') return './';
   const p=String(path).trim().replace(/^\/+/, '');
   const norm = p.startsWith('./') ? p : ('./' + p);
-  if(norm === './index.htm') return './';
+  if(norm === './index.html') return './';
   return norm;
 }
 function classifyAsset(path){
@@ -717,7 +717,7 @@ function classifyAsset(path){
   if(p==='./') return 'page';
   if(p.endsWith('.apk')) return 'skip';
   if(/\/(?:page_\d{4}\.htm)$/.test(p) || /^\.\/page_\d{4}\.htm$/.test(p)) return 'page';
-  if(p.endsWith('/index.htm') || p === './index.htm' || p.endsWith('.htm')) return 'page';
+  if(p.endsWith('/index.html') || p === './index.html' || p === './' || p.endsWith('.htm')) return 'page';
   if(/\.(css|js|woff2?|ttf|otf|json|webmanifest|map)$/i.test(p)) return 'static';
   if(/\.(png|jpe?g|gif|webp|svg|avif|ico)$/i.test(p)) return 'other';
   return 'other';
@@ -950,7 +950,7 @@ self.addEventListener('message', (event) => {
 setInterval(()=>backgroundRescan().catch(e=>log('periodic rescan err',e)),RESCAN_INTERVAL);
 """
 
-OFFLINE_HTML = r"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport"content="width=device-width,initial-scale=1"/><title>离线模式</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;margin:0;padding:40px 24px;background:#f2f5f8;color:#333;display:flex;flex-direction:column;align-items:center;text-align:center}h1{margin:0 0 16px;font-size:1.6rem}p{line-height:1.55;margin:0 0 10px}.card{background:#fff;padding:32px 30px;max-width:460px;border-radius:18px;box-shadow:0 8px 30px -10px rgba(0,0,0,.15)}a.btn{display:inline-block;background:#3366ff;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:600;letter-spacing:.5px;margin-top:18px;box-shadow:0 4px 18px -6px rgba(51,102,255,.5)}a.btn:hover{filter:brightness(1.05)}</style></head><body><div class="card"><h1>离线不可用</h1><p>该页面尚未缓存或当前网络不可用。</p><a class="btn" href="./index.htm">返回目录</a></div></body></html>"""
+OFFLINE_HTML = r"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport"content="width=device-width,initial-scale=1"/><title>离线模式</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;margin:0;padding:40px 24px;background:#f2f5f8;color:#333;display:flex;flex-direction:column;align-items:center;text-align:center}h1{margin:0 0 16px;font-size:1.6rem}p{line-height:1.55;margin:0 0 10px}.card{background:#fff;padding:32px 30px;max-width:460px;border-radius:18px;box-shadow:0 8px 30px -10px rgba(0,0,0,.15)}a.btn{display:inline-block;background:#3366ff;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:600;letter-spacing:.5px;margin-top:18px;box-shadow:0 4px 18px -6px rgba(51,102,255,.5)}a.btn:hover{filter:brightness(1.05)}</style></head><body><div class="card"><h1>离线不可用</h1><p>该页面尚未缓存或当前网络不可用。</p><a class="btn" href="./index.html">返回目录</a></div></body></html>"""
 
 BASE64_ICON_192 = (
     "iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABlApwJAAAAAklEQVR4AewaftIAAABTSURBVO3BQRAAAAjD"

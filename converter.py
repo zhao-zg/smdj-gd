@@ -262,8 +262,8 @@ class EPUBToHTMLConverter:
             "const url=prefix+'page_'+String(target).padStart(4,'0')+'.htm';"
         )
         reader_js=reader_js.replace(
-            "const correct=(pageInfo.current===-1)?'index.htm':'../index.htm';",
-            "const correct=(pageInfo.current===-1)?'index.htm':('index.htm?from='+pageInfo.current);"
+            "const correct=(pageInfo.current===-1)?'index.html':'../index.html';",
+            "const correct=(pageInfo.current===-1)?'index.html':('index.html?from='+pageInfo.current);"
         )
         self.assets_js_dir.joinpath("reader.js").write_text(reader_js,encoding="utf-8")
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
@@ -361,13 +361,13 @@ class EPUBToHTMLConverter:
         return f"""<!DOCTYPE html><html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <title>目录重定向</title>
-<meta http-equiv="refresh" content="0;url=index.htm">
-<script>location.replace('index.htm');</script>
+<meta http-equiv="refresh" content="0;url=index.html">
+<script>location.replace('index.html');</script>
 <link rel="stylesheet" href="assets/css/core.css">
 <link rel="stylesheet" href="assets/css/themes.css">
 <link rel="stylesheet" href="assets/css/extra.css">
 </head><body>
-<p>跳转到目录... <a href="index.htm">若未跳转点击</a></p>
+<p>跳转到目录... <a href="index.html">若未跳转点击</a></p>
 </body></html>"""
 
     def _build_content_page(self,body:str,idx:int,total:int)->str:
@@ -407,7 +407,7 @@ class EPUBToHTMLConverter:
   <nav class="nav">
     <div class="nav-buttons">
       {prev_btn}
-        <a class="nav-btn" data-nav="toc" href="index.htm?from={idx}">目录</a>
+        <a class="nav-btn" data-nav="toc" href="index.html?from={idx}">目录</a>
       {today_btn}
       {next_btn}
     </div>
@@ -699,7 +699,7 @@ window.addEventListener('load', () => {
   <nav class="nav">
     <div class="nav-buttons">
       <a class="nav-btn disabled" data-nav="prev" aria-hidden="true">←</a>
-      <a class="nav-btn" data-nav="toc" href="index.htm">目录</a>
+      <a class="nav-btn" data-nav="toc" href="index.html">目录</a>
       {today_btn}
       <a class="nav-btn disabled" data-nav="next" aria-hidden="true">→</a>
     </div>
@@ -728,7 +728,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 {self._pwa_actions_script()}
 </body>
 </html>"""
-        (self.output_dir/"index.htm").write_text(index_html,encoding="utf-8")
+        (self.output_dir/"index.html").write_text(index_html,encoding="utf-8")
         print("📚 目录页完成")
 
     def _find_spine_index(self,href:str)->Optional[int]:
@@ -795,7 +795,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
             "name": "共读",
             "short_name": "共读",
             "description": "共读 离线阅读应用",
-            "start_url": "./index.htm",
+            "start_url": "./index.html",
             "display": "standalone",
             "background_color": "#ffffff",
             "theme_color": "#3366ff",
