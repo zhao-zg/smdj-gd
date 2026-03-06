@@ -771,7 +771,7 @@ async function fullPrecache(reason){
   log('fullPrecache',reason,{page:pc,stat:sc,other:oc});
 }
 function normalizePagePath(pathname){
-  pathname=pathname.replace(/\/index\.htm$/,'/');
+  pathname=pathname.replace(/\/index\.html?$/,'/');
   if(/\/page_\d{4}\.htm$/.test(pathname)) return pathname;
   if(/\/page_\d{4}$/.test(pathname)) pathname+='/';
   return pathname;
