@@ -56,6 +56,9 @@ jobs:
         with:
           node-version: "18"
 
+      - name: Install Python dependencies
+        run: pip install pillow
+
       - name: Build static site to output/
         shell: bash
         run: |

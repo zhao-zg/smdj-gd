@@ -615,7 +615,9 @@ async function setupAdaptiveActions() {
             infoBox.textContent = '缓存状态：Service Worker 未就绪';
             return;
         }
-        infoBox.textContent = `缓存状态：\n版本 ${info.version || '-'}\n缓存区 ${info.cacheCount || 0} 个\n条目 ${info.entryCount || 0} 个`;
+        const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
+        const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
+        infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
     });
 
     clearBtn.addEventListener('click', async () => {

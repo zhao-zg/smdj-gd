@@ -725,16 +725,16 @@ function classifyAsset(path){
 async function precacheTo(cacheName, assets){
   const cache=await caches.open(cacheName);
   let okCount=0;
-  for(const asset of uniqueList(assets.map(normalizeAssetPath))){
-    if(!asset || classifyAsset(asset)==='skip') continue;
-    try{
-      const req=new Request(asset,{cache:'no-store'});
-      const res=await fetch(req);
-      if(res && res.ok){
-        await cache.put(req,res.clone());
-        okCount++;
-      }
-    }catch(_){ }
+  const normalized=uniqueList(assets.map(normalizeAssetPath)).filter(a=>a && classifyAsset(a)!=='skip');
+  const BATCH=8;
+  for(let i=0;i<normalized.length;i+=BATCH){
+    const batch=normalized.slice(i,i+BATCH);
+    await Promise.all(batch.map(async asset=>{
+      try{
+        const res=await fetch(new Request(asset,{cache:'no-store'}));
+        if(res && res.ok){await cache.put(new Request(asset),res.clone());okCount++;}
+      }catch(_){}
+    }));
   }
   return okCount;
 }
@@ -743,7 +743,7 @@ function splitPrecacheTargets(){
   const staticTargets=[];
   const otherTargets=[];
 
-  const pageCandidates=['./','./offline.html',...PAGE_LIST.map(p=>'./'+p)];
+  const pageCandidates=['./', './offline.htm', ...PAGE_LIST.map(p=>'./'+p)];
   const allCandidates=[...CORE_ASSETS,...ALL_ASSETS];
 
   for(const path of uniqueList([...pageCandidates,...allCandidates])){
@@ -912,20 +912,27 @@ self.addEventListener('message', (event) => {
   if (data.type === 'CACHE_INFO') {
     event.waitUntil((async () => {
       try {
-        const names = await caches.keys();
-        let entryCount = 0;
-        for (const name of names) {
-          const cache = await caches.open(name);
-          const keys = await cache.keys();
-          entryCount += keys.length;
-        }
+        const [pageCache, staticCache, otherCache] = await Promise.all([
+          caches.open(PAGE_CACHE),
+          caches.open(STATIC_CACHE),
+          caches.open(OTHER_CACHE),
+        ]);
+        const [pageKeys, staticKeys, otherKeys] = await Promise.all([
+          pageCache.keys(),
+          staticCache.keys(),
+          otherCache.keys(),
+        ]);
+        const targets = splitPrecacheTargets();
+        const missingPages = targets.pageTargets.filter(async p => !(await pageCache.match(p))).length;
         port.postMessage({
           ok: true,
           available: true,
           version: VERSION,
-          cacheCount: names.length,
-          entryCount,
-          cacheNames: names,
+          cacheCount: 3,
+          entryCount: pageKeys.length + staticKeys.length + otherKeys.length,
+          pages:   { cached: pageKeys.length,   total: targets.pageTargets.length },
+          statics: { cached: staticKeys.length, total: targets.staticTargets.length },
+          others:  { cached: otherKeys.length,  total: targets.otherTargets.length },
         });
       } catch (e) {
         port.postMessage({ ok: false, available: true, error: String(e) });
