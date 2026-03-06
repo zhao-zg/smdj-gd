@@ -4,7 +4,6 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM Usage:
 REM   release-tag.bat 1.2.3
 REM   release-tag.bat v1.2.3
-REM   release-tag.bat v1.2.3 --allow-dirty
 
 if "%~1"=="" (
   for /f "delims=" %%V in ('node -p "require('./app_config.json').version"') do set "CUR_VER=%%V"
@@ -17,11 +16,6 @@ if "%~1"=="" (
 ) else (
   set "INPUT_VER=%~1"
 )
-set "ALLOW_DIRTY=0"
-
-if /I "%~2"=="--allow-dirty" set "ALLOW_DIRTY=1"
-if /I "%~2"=="-f" set "ALLOW_DIRTY=1"
-
 set "TAG=%INPUT_VER%"
 
 if /I not "%TAG:~0,1%"=="v" set "TAG=v%TAG%"
@@ -70,14 +64,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%ALLOW_DIRTY%"=="0" (
-  for /f %%i in ('git status --porcelain') do (
-    echo Working tree has uncommitted changes. Please commit or stash first.
-    echo Or run with --allow-dirty to skip this check.
-    exit /b 1
-  )
-)
-
 echo Fetching tags from origin...
 git fetch --tags origin
 if errorlevel 1 (
@@ -87,8 +73,9 @@ if errorlevel 1 (
 
 git rev-parse -q --verify "refs/tags/%TAG%" >nul 2>nul
 if not errorlevel 1 (
-  echo Tag already exists: %TAG%
-  exit /b 1
+  echo Tag %TAG% already exists, removing...
+  git tag -d "%TAG%" >nul 2>nul
+  git push origin ":refs/tags/%TAG%" >nul 2>nul
 )
 
 echo Updating app_config.json version to %RAW_VER%...

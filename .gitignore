@@ -7,3 +7,6 @@ output/
 
 # Node dependencies
 node_modules/
+
+release.keystore
+keystore.properties
