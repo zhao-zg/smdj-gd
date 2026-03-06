@@ -260,19 +260,6 @@ class EPUBToHTMLConverter:
             self.assets_css_dir.joinpath("fonts.css").write_text(FONTS_CSS_TEMPLATE,encoding="utf-8")
         self.assets_css_dir.joinpath("extra.css").write_text("/* EPUB 内置 CSS 合并后写入 */",encoding="utf-8")
         reader_js=READER_JS.replace("/*__DELAY_SEGMENT__*/","false" if self.presegment_tts else "true")
-        # 扁平页面结构: page_xxxx.html
-        reader_js=reader_js.replace(
-            "const prefix=(window.PAGE_INFO&&window.PAGE_INFO.current>=0)?'../':'';",
-            "const prefix='';"
-        )
-        reader_js=reader_js.replace(
-            "const url=prefix+'page_'+String(target).padStart(4,'0')+'/';",
-            "const url=prefix+'page_'+String(target).padStart(4,'0')+'.htm';"
-        )
-        reader_js=reader_js.replace(
-            "const correct=(pageInfo.current===-1)?'index.html':'../index.html';",
-            "const correct=(pageInfo.current===-1)?'index.html':('index.html?from='+pageInfo.current);"
-        )
         self.assets_js_dir.joinpath("reader.js").write_text(reader_js,encoding="utf-8")
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("app-update.js").write_text(APP_UPDATE_JS,encoding="utf-8")

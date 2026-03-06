@@ -296,8 +296,7 @@ function initTodayLinks() {
         alert('超出范围，跳最后一页'); target = total - 1;
       }
       if (target < 0) target = 0;
-      const prefix = (window.PAGE_INFO && window.PAGE_INFO.current >= 0) ? '../' : '';
-      const url    = prefix + 'page_' + String(target).padStart(4, '0') + '/';
+      const url = 'page_' + String(target).padStart(4, '0') + '.htm';
       customNavigate(url, target > (window.PAGE_INFO?.current || 0) ? 'next' : 'prev');
     });
   });
@@ -431,7 +430,7 @@ function updateNavBarByPageInfo(pageInfo) {
   }
 
   if (tocBtn) {
-    const correct = (pageInfo.current === -1) ? 'index.html' : '../index.html';
+    const correct = (pageInfo.current === -1) ? 'index.html' : ('index.html?from=' + pageInfo.current);
     if (tocBtn.getAttribute('href') != correct) tocBtn.setAttribute('href', correct);
     tocBtn.dataset.nav = 'toc';
   }
