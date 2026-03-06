@@ -481,10 +481,18 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <button id="btn-app-update" class="chip" type="button" style="display:none;">检查更新</button>
         <a id="btn-download-apk" class="chip" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
         <button id="btn-install-pwa" class="chip" type="button" style="display:none;">安装 PWA</button>
-        <button id="btn-cache-info" class="chip" type="button" style="display:none;">缓存数据</button>
+        <button id="btn-cache-info" class="chip" type="button" style="display:none;">刷新缓存</button>
         <button id="btn-clear-cache" class="chip" type="button" style="display:none;">清理缓存</button>
       </div>
-      <div id="cache-info" style="margin-top:8px;font-size:.8rem;color:var(--c-fg-soft);white-space:pre-wrap;">缓存状态：未查询</div>
+      <div id="cache-status-box" style="margin-top:8px;display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span id="cache-info" style="font-size:.8rem;color:var(--c-fg-soft);">缓存状态：未查询</span>
+          <span id="cache-pct" style="font-size:.8rem;font-weight:600;color:var(--c-accent);"></span>
+        </div>
+        <div style="height:6px;border-radius:4px;background:var(--c-surface);border:1px solid var(--c-border);overflow:hidden;">
+          <div id="cache-progress-fill" style="height:100%;background:var(--c-accent);border-radius:4px;width:0%;transition:width .4s ease;"></div>
+        </div>
+      </div>
     </div>
     <button id="close-settings" class="close-btn">完成</button>
   </div>
@@ -516,10 +524,18 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <button id="btn-app-update" class="nav-btn" type="button" style="display:none;">检查更新</button>
         <a id="btn-download-apk" class="nav-btn" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
         <button id="btn-install-pwa" class="nav-btn" type="button" style="display:none;">安装 PWA</button>
-        <button id="btn-cache-info" class="nav-btn" type="button" style="display:none;">缓存数据</button>
+        <button id="btn-cache-info" class="nav-btn" type="button" style="display:none;">刷新缓存</button>
         <button id="btn-clear-cache" class="nav-btn" type="button" style="display:none;">清理缓存</button>
     </div>
-    <div id="cache-info" class="hint" style="margin:0; text-align:left; white-space:pre-wrap;">缓存状态：未查询</div>
+    <div id="cache-status-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <span id="cache-info" class="hint" style="margin:0;">缓存状态：未查询</span>
+        <span id="cache-pct" style="font-size:.8rem;font-weight:600;color:var(--c-accent);"></span>
+      </div>
+      <div style="height:6px;border-radius:4px;background:var(--c-surface);border:1px solid var(--c-border);overflow:hidden;">
+        <div id="cache-progress-fill" style="height:100%;background:var(--c-accent);border-radius:4px;width:0%;transition:width .4s ease;"></div>
+      </div>
+    </div>
 </section>"""
 
     def _pwa_actions_script(self) -> str:
@@ -627,19 +643,47 @@ async function setupAdaptiveActions() {
     });
 
     infoBtn.addEventListener('click', async () => {
+        const statusBox = document.getElementById('cache-status-box');
+        const pctEl = document.getElementById('cache-pct');
+        const fillEl = document.getElementById('cache-progress-fill');
+        const infoBox = document.getElementById('cache-info');
+        if (statusBox) statusBox.style.display = 'block';
+        if (infoBox) infoBox.textContent = '查询中…';
         const info = await cxCacheInfo();
         if (!info.available) {
-            infoBox.textContent = '缓存状态：Service Worker 未就绪';
+            if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
             return;
         }
         const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
         const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
-        infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (fillEl) fillEl.style.width = pct + '%';
     });
 
     clearBtn.addEventListener('click', async () => {
+        const infoBox2 = document.getElementById('cache-info');
+        const pctEl2 = document.getElementById('cache-pct');
+        const fillEl2 = document.getElementById('cache-progress-fill');
+        const statusBox2 = document.getElementById('cache-status-box');
+        if (statusBox2) statusBox2.style.display = 'block';
+        if (infoBox2) infoBox2.textContent = '清理中…';
         const ok = await cxClearCache();
-        infoBox.textContent = ok ? '缓存状态：已清理，建议刷新页面' : '缓存状态：清理失败';
+        if (!ok) { if (infoBox2) infoBox2.textContent = '清理失败'; return; }
+        if (infoBox2) infoBox2.textContent = '已清理，重新缓存中…';
+        if (pctEl2) pctEl2.textContent = '0%';
+        if (fillEl2) fillEl2.style.width = '0%';
+        // 等 SW fullPrecache 完成后（cxClearCache 等它结束才返回），再刷新进度
+        const info2 = await cxCacheInfo().catch(() => ({}));
+        if (info2.available) {
+            const total2 = (info2.pages?.total||0)+(info2.statics?.total||0)+(info2.others?.total||0);
+            const cached2 = (info2.pages?.cached||0)+(info2.statics?.cached||0)+(info2.others?.cached||0);
+            const pct2 = total2 > 0 ? Math.min(100, Math.round(cached2/total2*100)) : 0;
+            if (infoBox2) infoBox2.textContent = `版本 ${info2.version||'-'}  期望 ${total2} 个  已缓存 ${cached2} 个`;
+            if (pctEl2) pctEl2.textContent = pct2 + '%';
+            if (fillEl2) fillEl2.style.width = pct2 + '%';
+        }
     });
 
     updateBtn.addEventListener('click', async () => {
@@ -657,6 +701,22 @@ async function setupAdaptiveActions() {
 }
 
 window.addEventListener('load', setupAdaptiveActions);
+window.addEventListener('load', () => {
+    // 页面加载后自动刷新缓存状态（延迟等 SW 就绪）
+    setTimeout(async () => {
+        const info = await cxCacheInfo().catch(() => ({}));
+        if (!info.available) return;
+        const infoBox = document.getElementById('cache-info');
+        const pctEl = document.getElementById('cache-pct');
+        const fillEl = document.getElementById('cache-progress-fill');
+        const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
+        const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
+        const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (fillEl) fillEl.style.width = pct + '%';
+    }, 1200);
+});
 window.addEventListener('load', () => {
     const from = new URLSearchParams(window.location.search).get('from');
     if (from === null) return;
