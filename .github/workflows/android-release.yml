@@ -97,27 +97,7 @@ jobs:
           echo "Web assets OK: $(find $ASSETS_DIR -type f | wc -l) files synced."
 
       - name: Generate Android launcher icons from PWA icon
-        shell: bash
-        run: |
-          ICON_SRC="output/icons/icon-512.png"
-          if [ ! -f "$ICON_SRC" ]; then
-            echo "No icon-512.png found, using default Capacitor icon."
-          else
-            python3 - <<'PYEOF'
-import subprocess, os
-sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
-for density, size in sizes.items():
-    dst = f"android/app/src/main/res/mipmap-{density}/ic_launcher.png"
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    subprocess.run(["python3", "-c", f"""
-from PIL import Image
-img = Image.open("output/icons/icon-512.png").convert("RGBA").resize(({size},{size}), Image.LANCZOS)
-img.save("{dst}")
-"""], check=True)
-    print(f"Generated {dst} ({size}x{size})")
-PYEOF
-            echo "Android launcher icons generated."
-          fi
+        run: python3 gen_icons.py
 
       - name: Prepare signing material
         shell: bash
