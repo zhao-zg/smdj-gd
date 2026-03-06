@@ -85,6 +85,14 @@ jobs:
           npx cap add android
           npx cap sync android
 
+          # Verify web assets were actually copied
+          ASSETS_DIR="android/app/src/main/assets/public"
+          if [ ! -f "$ASSETS_DIR/index.html" ]; then
+            echo "ERROR: web assets not synced – index.html missing in $ASSETS_DIR"
+            exit 1
+          fi
+          echo "Web assets OK: $(find $ASSETS_DIR -type f | wc -l) files synced."
+
       - name: Apply Android launcher icons (optional)
         shell: bash
         run: |
@@ -171,6 +179,13 @@ jobs:
           APK_PATH=$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name "*.apk" ! -name "*-unsigned.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "No APK produced."
+            exit 1
+          fi
+
+          APK_SIZE=$(stat -c%s "$APK_PATH")
+          echo "APK size: $APK_SIZE bytes"
+          if [ "$APK_SIZE" -lt 1048576 ]; then
+            echo "ERROR: APK is only ${APK_SIZE} bytes (< 1MB) – likely missing web assets or signing failure."
             exit 1
           fi
 
