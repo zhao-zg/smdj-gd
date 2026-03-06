@@ -528,6 +528,10 @@ function smoothTransitionTo(url, dir = 'next', allowFetch = true) {
 
 function doPageSwap(url, entry, dir) {
   saveScrollImmediate();
+  /* 换页前停止 TTS，避免继续朗读旧页内容 */
+  if (window._ttsDock && (window._ttsDock.playing || window._ttsDock.paused)) {
+    window._ttsDock.stop();
+  }
   const oldView = document.getElementById('reader-content');
   if (!oldView) { location.href = url; return; }
 
@@ -557,6 +561,11 @@ function afterSwap(url, entry) {
   updateProgress();
   installInitialPrefetch();
   reinitDynamicFeatures();
+  /* 换页后重新扫描新页面的句子，供 TTS 使用 */
+  if (window._ttsDock) {
+    window._ttsDock.index = 0;
+    window._ttsDock.collectUnits();
+  }
 }
 
 function reinitDynamicFeatures() {}
