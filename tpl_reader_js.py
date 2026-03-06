@@ -195,8 +195,8 @@ function initControls() {
 
 /* ---- TTS Dock 可见性 ---- */
 function isPageView() {
-  /* 只有 page_XXXX.htm 正文页才设置 window.PAGE_INFO */
-  return !!(window.PAGE_INFO && typeof window.PAGE_INFO.current === 'number');
+  /* 只有 page_XXXX.htm 正文页的 current >= 0，目录页为 -1 */
+  return !!(window.PAGE_INFO && typeof window.PAGE_INFO.current === 'number' && window.PAGE_INFO.current >= 0);
 }
 function toggleTTSVisibility(show) {
   const dock = document.getElementById('tts-dock');
@@ -247,30 +247,10 @@ function initBackTop() {
   btn && btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 }
 
-/* ---- 滚动位置保存/恢复 ---- */
-function saveScrollThrottle() {
-  if (scrollSaveTimer) return;
-  scrollSaveTimer = setTimeout(() => {
-    scrollSaveTimer = null;
-    const pageIndex = document.getElementById('reader-content')?.dataset.pageIndex;
-    if (pageIndex) localStorage.setItem(SCROLL_PREFIX + pageIndex,
-      String(window.scrollY || document.documentElement.scrollTop));
-  }, 400);
-}
-
-function saveScrollImmediate() {
-  const pageIndex = document.getElementById('reader-content')?.dataset.pageIndex;
-  if (pageIndex) localStorage.setItem(SCROLL_PREFIX + pageIndex,
-    String(window.scrollY || document.documentElement.scrollTop));
-}
-
-function restoreScroll() {
-  const pageIndex = document.getElementById('reader-content')?.dataset.pageIndex;
-  if (pageIndex && pageIndex !== '-1') {
-    const saved = localStorage.getItem(SCROLL_PREFIX + pageIndex);
-    if (saved) setTimeout(() => window.scrollTo(0, parseInt(saved, 10)), 30);
-  }
-}
+/* ---- 滚动位置保存/恢复（已禁用） ---- */
+function saveScrollThrottle() {}
+function saveScrollImmediate() {}
+function restoreScroll() {}
 
 /* ---- 键盘导航 ---- */
 function initKeys() {
@@ -636,8 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAndroidBack();
 });
 
-window.addEventListener('scroll', () => { handleScroll(); saveScrollThrottle(); }, { passive: true });
-window.addEventListener('beforeunload', () => saveScrollThrottle());
+window.addEventListener('scroll', () => { handleScroll(); }, { passive: true });
 
 })();
 """
