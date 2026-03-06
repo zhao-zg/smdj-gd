@@ -173,7 +173,8 @@ class TTSDock {
   cache() {
     this.dock     = document.getElementById('tts-dock');
     this.btnPlay  = document.getElementById('tts-btn-play');
-    this.selRate  = document.getElementById('tts-rate-select');
+    this.btnRate  = document.getElementById('tts-rate-btn');
+    this.menuRate  = document.getElementById('tts-rate-menu');
     this.btnClose = document.getElementById('tts-btn-close');
     this.bar    = document.getElementById('tts-progress-bar');
     this.fill   = document.getElementById('tts-progress-fill');
@@ -183,18 +184,28 @@ class TTSDock {
 
   bind() {
     this.btnPlay?.addEventListener('click', () => this.togglePlay());
-    this.selRate?.addEventListener('change', () => {
-      this.rate = parseFloat(this.selRate.value);
-      this.save();
-      if (this.playing || this.paused) {
-        this._tok = {};
-        this.engine.stop();
-        this._unwrapMark();
-        this.playing = true; this.paused = false;
-        this.updateAll();
-        setTimeout(() => this.speakCurrent(), 60);
-      }
+    this.btnRate?.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = this.menuRate.dataset.open === 'true';
+      this.menuRate.dataset.open = open ? 'false' : 'true';
     });
+    this.menuRate?.querySelectorAll('li').forEach(li => {
+      li.addEventListener('click', () => {
+        this.rate = parseFloat(li.dataset.val);
+        this.menuRate.dataset.open = 'false';
+        this.save();
+        this.updateRate();
+        if (this.playing || this.paused) {
+          this._tok = {};
+          this.engine.stop();
+          this._unwrapMark();
+          this.playing = true; this.paused = false;
+          this.updateAll();
+          setTimeout(() => this.speakCurrent(), 60);
+        } else { this.updateProgress(); }
+      });
+    });
+    document.addEventListener('click', () => { if (this.menuRate) this.menuRate.dataset.open = 'false'; });
     this.btnClose?.addEventListener('click', () => {
       this.stop();
       this.dock.setAttribute('data-visible', 'false');
@@ -358,11 +369,14 @@ class TTSDock {
   }
 
   updateRate() {
-    if (this.selRate) this.selRate.value = String(this.rate);
+    if (this.btnRate) this.btnRate.textContent = this.rate + '×';
+    if (this.menuRate) this.menuRate.querySelectorAll('li').forEach(li => {
+      li.classList.toggle('active', parseFloat(li.dataset.val) === this.rate);
+    });
   }
   updateButtons() {
     const disabled = window.TTS_SUPPORTED === false;
-    [this.btnPlay, this.selRate].forEach(b => { if (b) b.disabled = disabled; });
+    [this.btnPlay, this.btnRate].forEach(b => { if (b) b.disabled = disabled; });
   }
   updateAll() {
     if (this.btnPlay) this.btnPlay.textContent = this.playing ? '⏸️' : '▶️';

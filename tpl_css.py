@@ -97,7 +97,14 @@ hr{border:none;height:1px;background:linear-gradient(to right,transparent,var(--
 .dock-btn.play{background:linear-gradient(135deg,var(--c-accent),var(--c-accent2));color:#fff;border:none;}
 .dock-btn:hover{filter:brightness(1.05);}
 .dock-btn.small{padding:8px 12px;font-size:14px;min-width:auto;min-height:42px;}
-.tts-rate-select{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:8px 10px;font-size:14px;font-weight:600;color:var(--c-fg);cursor:pointer;min-height:42px;box-shadow:var(--shadow-small);outline:none;}
+.tts-rate-wrap{position:relative;}
+.tts-rate-btn{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:8px 14px;font-size:14px;font-weight:600;color:var(--c-fg);cursor:pointer;min-height:42px;box-shadow:var(--shadow-small);outline:none;}
+.tts-rate-menu{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(0);background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.18);list-style:none;margin:0;padding:4px;min-width:80px;z-index:200;transition:opacity .15s,transform .15s;transform-origin:bottom center;}
+.tts-rate-menu[data-open="false"]{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(6px);}
+.tts-rate-menu[data-open="true"]{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0);}
+.tts-rate-menu li{padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;text-align:center;color:var(--c-fg);}
+.tts-rate-menu li:hover{background:var(--c-surface-high);}
+.tts-rate-menu li.active{color:var(--c-accent);}
 .tts-progress-row{display:flex;align-items:center;gap:14px;}
 .tts-progress-bar{position:relative;flex:1;height:10px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:6px;cursor:pointer;overflow:hidden;touch-action:none;}
 .tts-progress-fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,var(--c-accent),rgba(var(--c-accent-rgb),.55));transition:width .25s linear;}

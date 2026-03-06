@@ -489,14 +489,17 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         return """<div class="tts-dock" id="tts-dock" data-visible="false">
   <div class="tts-dock-main">
     <button class="dock-btn play" id="tts-btn-play" title="播放 / 暂停">▶️</button>
-    <select class="tts-rate-select" id="tts-rate-select" title="朗读倍率">
-      <option value="0.5">0.5×</option>
-      <option value="0.8">0.8×</option>
-      <option value="1" selected>1.0×</option>
-      <option value="1.25">1.25×</option>
-      <option value="1.5">1.5×</option>
-      <option value="2">2.0×</option>
-    </select>
+    <div class="tts-rate-wrap" id="tts-rate-wrap" title="朗读倍率">
+      <button class="tts-rate-btn" id="tts-rate-btn">1.0×</button>
+      <ul class="tts-rate-menu" id="tts-rate-menu" data-open="false">
+        <li data-val="2">2.0×</li>
+        <li data-val="1.5">1.5×</li>
+        <li data-val="1.25">1.25×</li>
+        <li data-val="1" class="active">1.0×</li>
+        <li data-val="0.8">0.8×</li>
+        <li data-val="0.5">0.5×</li>
+      </ul>
+    </div>
     <button class="dock-btn small" id="tts-btn-close" title="隐藏朗读">✕</button>
   </div>
   <div class="tts-progress-row">
