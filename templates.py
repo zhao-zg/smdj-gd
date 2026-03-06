@@ -58,7 +58,7 @@ blockquote{margin:1.8rem 0;padding:1rem 1.2rem;background:linear-gradient(165deg
 blockquote::before{content:"\201C";position:absolute;top:-10px;left:8px;font-size:3.5rem;line-height:1;color:rgba(var(--c-accent-rgb),.25);font-family:Georgia,serif;}
 hr{border:none;height:1px;background:linear-gradient(to right,transparent,var(--c-border),transparent);margin:3rem 0;}
 .app-bar{position:fixed;top:0;left:0;right:0;padding-top:var(--safe-top);background:rgba(255,255,255,.82);backdrop-filter:blur(14px) saturate(180%);border-bottom:1px solid rgba(0,0,0,.05);z-index:90;transform:translateY(0);transition:transform .4s,background .4s;}
-html.dark .app-bar{background:rgba(28,30,34,.82);border-bottom-color:rgba(255,255,255,.08);}
+html.dark .app-bar{background:rgba(15,17,20,.88);border-bottom-color:rgba(255,255,255,.10);}
 .app-bar[data-hidden="true"]{transform:translateY(calc(-100% - 6px));}
 .nav{max-width:980px;margin:0 auto;height:var(--app-bar-height);display:flex;align-items:center;justify-content:center;padding:0 clamp(14px,4vw,40px);position:relative;}
 .nav-buttons{display:flex;align-items:center;gap:.6rem;}
@@ -91,7 +91,7 @@ html.dark .app-bar{background:rgba(28,30,34,.82);border-bottom-color:rgba(255,25
 #back-top.show{display:flex;}
 
 .tts-dock{position:fixed;left:0;right:0;bottom:0;padding:10px clamp(14px,4vw,48px) calc(6px + var(--safe-bottom));background:rgba(255,255,255,.92);backdrop-filter:blur(18px) saturate(180%);border-top:1px solid var(--c-border);box-shadow:0 -8px 24px -10px rgba(0,0,0,.25);z-index:80;display:flex;flex-direction:column;gap:8px;transition:transform .4s,opacity .4s;}
-html.dark .tts-dock{background:rgba(28,30,34,.9);}
+html.dark .tts-dock{background:rgba(15,17,20,.94);}
 .tts-dock[data-visible="false"]{transform:translateY(110%);opacity:0;pointer-events:none;}
 .tts-dock-main{display:flex;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap;}
 .dock-btn{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:10px 16px;font-size:16px;cursor:pointer;color:var(--c-fg);display:inline-flex;align-items:center;justify-content:center;transition:.25s;min-width:46px;min-height:46px;box-shadow:var(--shadow-small);}
@@ -118,7 +118,7 @@ html.dark .tts-dock{background:rgba(28,30,34,.9);}
   .tts-progress-handle{width:16px;height:16px;}
   .fab-top{width:52px;height:52px;font-size:20px;}
 }
-html.dark {--c-bg:#1c1f22; --c-fg:#e5e8ec; --c-fg-soft:#9aa0a7; --c-surface:#262b31; --c-border:#31363c; --c-accent:#5d8bff; --c-accent-rgb:93,139,255;}
+html.dark {--c-bg:#0f1114; --c-fg:#f0f3f7; --c-fg-soft:#b0bac6; --c-surface:#1e2329; --c-border:#3a424f; --c-accent:#6b9eff; --c-accent-rgb:107,158,255;}
 html.reduce-motion *{animation:none !important;transition:none !important;}
 """
 
@@ -154,9 +154,9 @@ function logNav(...a){if(localStorage.getItem('navDebug')==='1')console.log('[NA
 function loadSettings(){try{Object.assign(st,JSON.parse(localStorage.getItem(LS_KEY)||'{}'));}catch(e){}}function saveSettings(){localStorage.setItem(LS_KEY,JSON.stringify(st));}
 function ensureOverrideStyle(){if(!overrideStyle){overrideStyle=document.createElement('style');overrideStyle.id='font-override';document.head.appendChild(overrideStyle);}const ff=FONT_FAMILIES[st.font]||FONT_FAMILIES.sans;overrideStyle.textContent=`body,#reader-content,.tts-sentence{font-family:${ff} !important;}`;}
 function applyTheme(){const html=document.documentElement;html.classList.remove('dark');if(st.theme!=='auto')html.classList.add(st.theme);html.setAttribute('data-theme',st.theme);}
-function syncChips(){document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.font===st.font));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.theme===st.theme));const showBtn=document.querySelector('#tts-toggle-chips [data-tts=show]');const hideBtn=document.querySelector('#tts-toggle-chips [data-tts=hide]');if(showBtn&&hideBtn){showBtn.classList.toggle('active',st.ttsVisible);hideBtn.classList.toggle('active',!st.ttsVisible);}if(window.TTS_SUPPORTED===false){document.querySelectorAll('#tts-toggle-chips .chip').forEach(c=>{c.classList.add('disabled');c.style.opacity='.45';c.style.pointerEvents='none';});}const fsLabel=document.getElementById('font-size-label');if(fsLabel)fsLabel.textContent=st.fontSize+'px';const lhLabel=document.getElementById('line-height-label');if(lhLabel)lhLabel.textContent=st.lineHeight.toFixed(2);}
+function syncChips(){document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.font===st.font));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.classList.toggle('active',ch.dataset.theme===st.theme));const showBtn=document.querySelector('#tts-toggle-chips [data-tts=show]');const hideBtn=document.querySelector('#tts-toggle-chips [data-tts=hide]');if(showBtn&&hideBtn){showBtn.classList.toggle('active',st.ttsVisible);hideBtn.classList.toggle('active',!st.ttsVisible);}if(window.TTS_SUPPORTED===false){document.querySelectorAll('#tts-toggle-chips .chip').forEach(c=>{c.classList.add('disabled');c.style.opacity='.45';});}const fsLabel=document.getElementById('font-size-label');if(fsLabel)fsLabel.textContent=st.fontSize+'px';const lhLabel=document.getElementById('line-height-label');if(lhLabel)lhLabel.textContent=st.lineHeight.toFixed(2);}
 function applySettings(){document.documentElement.style.setProperty('--fs-base',st.fontSize+'px');document.documentElement.style.setProperty('--lh-base',st.lineHeight);document.documentElement.dataset.font=st.font;applyTheme();ensureOverrideStyle();syncChips();toggleTTSVisibility(st.ttsVisible,false);}
-function initControls(){const fs=document.getElementById('font-size-range');fs&&fs.addEventListener('input',()=>{st.fontSize=parseInt(fs.value,10);applySettings();saveSettings();});const lh=document.getElementById('line-height-range');lh&&lh.addEventListener('input',()=>{st.lineHeight=parseFloat(lh.value);applySettings();saveSettings();});document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.font=ch.dataset.font;applySettings();saveSettings();}));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.theme=ch.dataset.theme;applySettings();saveSettings();}));document.querySelectorAll('#tts-toggle-chips .chip').forEach(ch=>ch.addEventListener('click',()=>{if(window.TTS_SUPPORTED===false)return;st.ttsVisible=(ch.dataset.tts==='show');toggleTTSVisibility(st.ttsVisible,true);saveSettings();syncChips();if(st.ttsVisible&&DEFER_TTS_SEGMENT)window.dispatchEvent(new CustomEvent('tts-lazy-segment'));}));const panel=document.getElementById('settings-panel');const openBtn=document.getElementById('open-settings');const closeBtn=document.getElementById('close-settings');openBtn&&openBtn.addEventListener('click',()=>{panel.setAttribute('data-open','true');panel.setAttribute('aria-hidden','false');if('serviceWorker' in navigator)navigator.serviceWorker.getRegistration().then(reg=>{if(!reg||!reg.active)return;const ch=new MessageChannel();ch.port1.onmessage=ev=>{const info=ev.data||{};const infoBox=document.getElementById('cache-info');const pctEl=document.getElementById('cache-pct');const fillEl=document.getElementById('cache-progress-fill');const statusBox=document.getElementById('cache-status-box');if(statusBox)statusBox.style.display='block';if(!info.available){if(infoBox)infoBox.textContent='Service Worker 未就绪';return;}const total=(info.pages?.total||0)+(info.statics?.total||0)+(info.others?.total||0);const cached=(info.pages?.cached||0)+(info.statics?.cached||0)+(info.others?.cached||0);const pct=total>0?Math.min(100,Math.round(cached/total*100)):0;if(infoBox)infoBox.textContent=`版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;if(pctEl)pctEl.textContent=pct+'%';if(fillEl)fillEl.style.width=pct+'%';};reg.active.postMessage({type:'CACHE_INFO'},[ch.port2]);}).catch(()=>{});});closeBtn&&closeBtn.addEventListener('click',()=>{panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');});document.addEventListener('click',e=>{if(panel&&panel.getAttribute('data-open')==='true'&&!panel.contains(e.target)&&e.target!==openBtn){panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');}});}
+function initControls(){const fs=document.getElementById('font-size-range');fs&&fs.addEventListener('input',()=>{st.fontSize=parseInt(fs.value,10);applySettings();saveSettings();});const lh=document.getElementById('line-height-range');lh&&lh.addEventListener('input',()=>{st.lineHeight=parseFloat(lh.value);applySettings();saveSettings();});document.querySelectorAll('#font-family-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.font=ch.dataset.font;applySettings();saveSettings();}));document.querySelectorAll('#theme-choices .chip').forEach(ch=>ch.addEventListener('click',()=>{st.theme=ch.dataset.theme;applySettings();saveSettings();}));document.querySelectorAll('#tts-toggle-chips .chip').forEach(ch=>ch.addEventListener('click',()=>{if(window.TTS_SUPPORTED===false){alert('该设备不支持朗读功能');return;}st.ttsVisible=(ch.dataset.tts==='show');toggleTTSVisibility(st.ttsVisible,true);saveSettings();syncChips();if(st.ttsVisible&&DEFER_TTS_SEGMENT)window.dispatchEvent(new CustomEvent('tts-lazy-segment'));}));const panel=document.getElementById('settings-panel');const openBtn=document.getElementById('open-settings');const closeBtn=document.getElementById('close-settings');openBtn&&openBtn.addEventListener('click',()=>{panel.setAttribute('data-open','true');panel.setAttribute('aria-hidden','false');if('serviceWorker' in navigator)navigator.serviceWorker.getRegistration().then(reg=>{if(!reg||!reg.active)return;const ch=new MessageChannel();ch.port1.onmessage=ev=>{const info=ev.data||{};const infoBox=document.getElementById('cache-info');const pctEl=document.getElementById('cache-pct');const fillEl=document.getElementById('cache-progress-fill');const statusBox=document.getElementById('cache-status-box');if(statusBox)statusBox.style.display='block';if(!info.available){if(infoBox)infoBox.textContent='Service Worker 未就绪';return;}const total=(info.pages?.total||0)+(info.statics?.total||0)+(info.others?.total||0);const cached=(info.pages?.cached||0)+(info.statics?.cached||0)+(info.others?.cached||0);const pct=total>0?Math.min(100,Math.round(cached/total*100)):0;if(infoBox)infoBox.textContent=`版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;if(pctEl)pctEl.textContent=pct+'%';if(fillEl)fillEl.style.width=pct+'%';};reg.active.postMessage({type:'CACHE_INFO'},[ch.port2]);}).catch(()=>{});});closeBtn&&closeBtn.addEventListener('click',()=>{panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');});document.addEventListener('click',e=>{if(panel&&panel.getAttribute('data-open')==='true'&&!panel.contains(e.target)&&e.target!==openBtn){panel.setAttribute('data-open','false');panel.setAttribute('aria-hidden','true');}});}
 function toggleTTSVisibility(show){const dock=document.getElementById('tts-dock');if(!dock)return;if(window.TTS_SUPPORTED===false){dock.setAttribute('data-visible','false');return;}dock.setAttribute('data-visible',show?'true':'false');}
 function handleScroll(){const y=window.scrollY||document.documentElement.scrollTop;const appBar=document.querySelector('.app-bar');if(appBar){const goingDown=y>lastScrollY;if(y>120&&goingDown)appBar.setAttribute('data-hidden','true');else appBar.removeAttribute('data-hidden');}lastScrollY=y;updateProgress();toggleBackTop(y);scheduleBarShow();}
 function scheduleBarShow(){const appBar=document.querySelector('.app-bar');clearTimeout(hideTimer);hideTimer=setTimeout(()=>appBar&&appBar.removeAttribute('data-hidden'),1600);}
@@ -418,28 +418,74 @@ APP_UPDATE_JS = r"""
 })();
 """
 
-# ================== TTS JS (版本号与前端 key 同步即可) ==================
+# ================== TTS JS – native Capacitor TTS + Web Speech API fallback ==================
 TTS_JS = r"""
-/* 句级 TTS v3.6.7 (逻辑与 3.6.6 相同，仅版本号更新) */
+/* 句级 TTS v4.0 – Capacitor 原生 TTS (APK) / Web Speech API (PWA/浏览器) */
+
+/* ---- 语音引擎适配器 ---- */
+class WebSpeechEngine{
+  constructor(){
+    this.synth=window.speechSynthesis;this.voice=null;this._retry=0;this._timer=null;
+    const load=()=>{const vs=this.synth.getVoices();if(vs&&vs.length){this.voice=vs.find(v=>/^zh/i.test(v.lang))||vs.find(v=>/Chinese/i.test(v.name))||vs[0];}else{this._retry++;this._timer=setTimeout(load,Math.min(5000,500+this._retry*250));}};
+    if('onvoiceschanged' in this.synth)this.synth.onvoiceschanged=load;
+    load();
+  }
+  speak(text,rate,pitch,volume){
+    return new Promise((resolve,reject)=>{
+      const u=new SpeechSynthesisUtterance(text);
+      u.lang='zh-CN';if(this.voice)u.voice=this.voice;
+      u.rate=rate;u.pitch=pitch;u.volume=volume;
+      u.onend=()=>resolve();u.onerror=e=>reject(e);
+      this.synth.speak(u);
+    });
+  }
+  stop(){this.synth.cancel();}
+  pause(){this.synth.pause();}
+  resume(){this.synth.resume();}
+  get supportsPause(){return true;}
+}
+
+class NativeEngine{
+  constructor(p){this.p=p;}
+  speak(text,rate,pitch,volume){return this.p.speak({text,lang:'zh-CN',rate,pitch,volume,category:'ambient'});}
+  stop(){return this.p.stop().catch(()=>{});}
+  pause(){return this.stop();}  /* 原生 TTS 无 pause，停止后保留位置 */
+  resume(){}
+  get supportsPause(){return false;}
+}
+
+function createEngine(){
+  const cap=window.Capacitor;
+  if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+    const p=cap.Plugins?.TextToSpeech;
+    if(p&&typeof p.speak==='function'){console.log('[TTS] 使用原生 Capacitor TTS');return new NativeEngine(p);}
+    console.warn('[TTS] Capacitor 已检测但找不到 TextToSpeech 插件');
+  }
+  if('speechSynthesis' in window){console.log('[TTS] 使用 Web Speech API');return new WebSpeechEngine();}
+  return null;
+}
+
+/* ---- TTSDock ---- */
 class TTSDock{
   constructor(){
-    if(!('speechSynthesis' in window)){
+    this.engine=createEngine();
+    if(!this.engine){
       window.TTS_SUPPORTED=false;
+      setTimeout(()=>{if('speechSynthesis' in window){this.engine=new WebSpeechEngine();window.TTS_SUPPORTED=true;document.querySelectorAll('#tts-toggle-chips .chip').forEach(c=>{c.classList.remove('disabled');c.style.opacity='';});}},1500);
       document.getElementById('tts-dock')?.setAttribute('data-visible','false');
       return;
     }
     window.TTS_SUPPORTED=true;
-    this.synth=window.speechSynthesis;
-    this.voice=null;this.sentences=[];this.index=0;
+    this.sentences=[];this.index=0;
     this.playing=false;this.paused=false;this.continuous=false;
     this.rate=1;this.pitch=1;this.volume=1;
-    this._voicesLoaded=false;this._dragging=false;this._lastSpokenIndex=-1;
-    this._voiceRetry=0;this._refreshTimer=null;this._segmented=false;this._wasPlayingBeforeDrag=false;
+    this._dragging=false;this._lastSpokenIndex=-1;
+    this._segmented=false;this._wasPlayingBeforeDrag=false;
     this.presegment=document.getElementById('reader-content')?.dataset.presegment==='true';
     this.restore();this.cache();this.bind();
     if(this.presegment){this.segmentDocument();this.collect();}
-    else {window.addEventListener('tts-lazy-segment',()=>this.lazySegment(),{once:true});}
-    this.refreshVoices();this.updateAll();
+    else{window.addEventListener('tts-lazy-segment',()=>this.lazySegment(),{once:true});}
+    this.updateAll();
   }
   lazySegment(){if(this._segmented)return;this.segmentDocument();this.collect();}
   restore(){try{const s=JSON.parse(localStorage.getItem('tts.dock.settings')||'{}');this.rate=s.rate??1;this.pitch=s.pitch??1;this.volume=s.volume??1;this.continuous=s.continuous??false;}catch(e){}}
@@ -453,121 +499,65 @@ class TTSDock{
     this.btnMode?.addEventListener('click',()=>{this.continuous=!this.continuous;this.updateMode();this.save();});
     this.btnClose?.addEventListener('click',()=>{this.stop();this.dock.setAttribute('data-visible','false');try{const r=JSON.parse(localStorage.getItem('reader.settings.v3.6.3')||'{}');r.ttsVisible=false;localStorage.setItem('reader.settings.v3.6.3',JSON.stringify(r));document.querySelectorAll('#tts-toggle-chips .chip').forEach(ch=>{if(ch.dataset.tts==='show')ch.classList.remove('active');if(ch.dataset.tts==='hide')ch.classList.add('active');});}catch(e){}});
     this.bar?.addEventListener('click',e=>{if(this._dragging)return;this._seek(e,true);});
-    const startDrag=e=>{if(!this.sentences.length)return;this._dragging=true;this._wasPlayingBeforeDrag=this.playing;if(this.playing||this.paused)this.synth.cancel();this._seek(e,false);document.addEventListener('mousemove',moveDrag);document.addEventListener('mouseup',endDrag);document.addEventListener('touchmove',moveDrag,{passive:false});document.addEventListener('touchend',endDrag);};
+    const startDrag=e=>{if(!this.sentences.length)return;this._dragging=true;this._wasPlayingBeforeDrag=this.playing;if(this.playing||this.paused){this.engine.stop();this.playing=false;this.paused=false;}this._seek(e,false);document.addEventListener('mousemove',moveDrag);document.addEventListener('mouseup',endDrag);document.addEventListener('touchmove',moveDrag,{passive:false});document.addEventListener('touchend',endDrag);};
     const moveDrag=e=>{if(!this._dragging)return;e.preventDefault();this._seek(e,false);};
-    const endDrag=()=>{if(!this._dragging)return;this._dragging=false;document.removeEventListener('mousemove',moveDrag);document.removeEventListener('mouseup',endDrag);document.removeEventListener('touchmove',moveDrag);document.removeEventListener('touchend',endDrag);if(this._wasPlayingBeforeDrag){if(this.index!==this._lastSpokenIndex||!this.synth.speaking){this.playing=true;this.paused=false;this.speakCurrent(true);}else{this.highlightCurrent();this.updateProgress();}}else{this.highlightCurrent();this.updateProgress();}};
-    this.bar?.addEventListener('mousedown',startDrag);
-    this.handle?.addEventListener('mousedown',startDrag);
-    this.bar?.addEventListener('touchstart',startDrag,{passive:false});
-    this.handle?.addEventListener('touchstart',startDrag,{passive:false});
+    const endDrag=()=>{if(!this._dragging)return;this._dragging=false;document.removeEventListener('mousemove',moveDrag);document.removeEventListener('mouseup',endDrag);document.removeEventListener('touchmove',moveDrag);document.removeEventListener('touchend',endDrag);if(this._wasPlayingBeforeDrag){this.playing=true;this.paused=false;this.speakCurrent();}else{this.highlightCurrent();this.updateProgress();}};
+    this.bar?.addEventListener('mousedown',startDrag);this.handle?.addEventListener('mousedown',startDrag);
+    this.bar?.addEventListener('touchstart',startDrag,{passive:false});this.handle?.addEventListener('touchstart',startDrag,{passive:false});
     document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;if(e.key===' '){e.preventDefault();this.togglePlay();}else if(e.key==='Escape'){this.stop();}});
-    document.addEventListener('visibilitychange',()=>{if(document.hidden){if(this.playing)this.pause();}});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden&&this.playing)this.pause();});
   }
   _clientX(e){return e.touches&&e.touches.length?e.touches[0].clientX:e.clientX;}
-  _seek(e,playIfPlaying){
+  _seek(e,play){
     if(!this.sentences.length)return;
-    const rect=this.bar.getBoundingClientRect();let pct=(this._clientX(e)-rect.left)/rect.width;
-    pct=Math.min(1,Math.max(0,pct));
-    const target=Math.round(pct*(this.sentences.length-1));
-    if(target===this.index&&!playIfPlaying){this.updateProgress();return;}
-    this.index=target;
-    if(playIfPlaying&&(this.playing||this.paused)){
-      if(this.index!==this._lastSpokenIndex||!this.synth.speaking){
-        this.synth.cancel();
-        setTimeout(()=>this.speakCurrent(true),60);
-      }
-    }else{
-      this.highlightCurrent();this.updateProgress();
-    }
+    const rect=this.bar.getBoundingClientRect();
+    let pct=(this._clientX(e)-rect.left)/rect.width;pct=Math.min(1,Math.max(0,pct));
+    this.index=Math.round(pct*(this.sentences.length-1));
+    if(play&&(this.playing||this.paused)){this.engine.stop();setTimeout(()=>this.speakCurrent(),60);}
+    else{this.highlightCurrent();this.updateProgress();}
   }
   segmentDocument(){
     const root=document.getElementById('reader-content');if(!root||root.dataset.ttsSegmented==='true')return;
-    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>{
-      if(!n.parentElement)return NodeFilter.FILTER_REJECT;
-      if(['SCRIPT','STYLE','NOSCRIPT'].includes(n.parentElement.tagName))return NodeFilter.FILTER_REJECT;
-      if(!n.textContent.trim())return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    }});
-    let node;const nodes=[];
-    while(node=walker.nextNode())nodes.push(node);
-    const splitter=/([^。！？!?；;…]*[。！？!?；;…]|[^。！？!?；;…]+$)/g;
-    let idx=0;
-    nodes.forEach(tn=>{
-      const parts=tn.textContent.match(splitter);
-      if(!parts)return;
-      const frag=document.createDocumentFragment();
-      parts.forEach(p=>{
-        const s=p.trim();if(!s)return;
-        const sp=document.createElement('span');
-        sp.className='tts-sentence';sp.dataset.ttsIndex=String(idx++);
-        sp.textContent=s;frag.appendChild(sp);
-      });
-      tn.parentNode.replaceChild(frag,tn);
-    });
-    root.dataset.ttsSegmented='true';
-    this._segmented=true;
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>{if(!n.parentElement)return NodeFilter.FILTER_REJECT;if(['SCRIPT','STYLE','NOSCRIPT'].includes(n.parentElement.tagName))return NodeFilter.FILTER_REJECT;if(!n.textContent.trim())return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT;}});
+    let node;const nodes=[];while(node=walker.nextNode())nodes.push(node);
+    const splitter=/([^。！？!?；;…]*[。！？!?；;…]|[^。！？!?；;…]+$)/g;let idx=0;
+    nodes.forEach(tn=>{const parts=tn.textContent.match(splitter);if(!parts)return;const frag=document.createDocumentFragment();parts.forEach(p=>{const s=p.trim();if(!s)return;const sp=document.createElement('span');sp.className='tts-sentence';sp.dataset.ttsIndex=String(idx++);sp.textContent=s;frag.appendChild(sp);});tn.parentNode.replaceChild(frag,tn);});
+    root.dataset.ttsSegmented='true';this._segmented=true;
   }
   collect(){this.sentences=[...document.querySelectorAll('#reader-content .tts-sentence')].map(sp=>({el:sp,text:sp.textContent}));this.updateProgress();}
-  refreshVoices(){
-    const attempt=()=>{
-      const voices=this.synth.getVoices();
-      if(voices&&voices.length){
-        if(!this.voice){
-          this.voice=voices.find(v=>/^zh/i.test(v.lang))||voices.find(v=>/Chinese/i.test(v.name))||voices[0];
-        }
-        this._voicesLoaded=true;
-        if(this._refreshTimer){clearTimeout(this._refreshTimer);this._refreshTimer=null;}
-      }else{
-        this._voicesLoaded=false;
-        this._voiceRetry++;
-        const delay=Math.min(5000,500+this._voiceRetry*250);
-        this._refreshTimer=setTimeout(attempt,delay);
-      }
-    };
-    if(this.synth.onvoiceschanged!==undefined){
-      this.synth.onvoiceschanged=()=>attempt();
-    }
-    attempt();
-  }
-  ensureVoice(){
-    if(this.voice&&this._voicesLoaded)return true;
-    const voices=this.synth.getVoices();
-    if(voices&&voices.length){
-      this.voice=voices.find(v=>/^zh/i.test(v.lang))||voices.find(v=>/Chinese/i.test(v.name))||voices[0];
-      this._voicesLoaded=true;
-      return true;
-    }
-    this.refreshVoices();
-    return false;
-  }
   togglePlay(){this.playing?this.pause():this.play();}
   play(){
     if(!this._segmented){this.segmentDocument();this.collect();}
     if(!this.sentences.length)return;
-    if(!this.ensureVoice()){setTimeout(()=>{if(this.playing&&!this.synth.speaking)this.play();},600);}
-    if(this.paused){this.synth.resume();this.paused=false;this.playing=true;this.updateAll();return;}
-    this.playing=true;this.paused=false;this.updateAll();this.speakCurrent(false);
+    if(this.paused&&this.engine.supportsPause){this.engine.resume();this.paused=false;this.playing=true;this.updateAll();return;}
+    this.playing=true;this.paused=false;this.updateAll();this.speakCurrent();
   }
-  pause(){if(this.playing){this.synth.pause();this.playing=false;this.paused=true;this.updateAll();}}
-  stop(){this.synth.cancel();this.playing=false;this.paused=false;this.index=0;this._lastSpokenIndex=-1;this.clearHighlight();this.updateAll();}
-  previous(){this.index=Math.max(0,this.index-1);if(this.playing||this.paused){if(this.index!==this._lastSpokenIndex||!this.synth.speaking){this.synth.cancel();setTimeout(()=>this.speakCurrent(true),60);}else{this.highlightCurrent();this.updateProgress();}}else{this.highlightCurrent();this.updateProgress();}}
-  next(){this.index=Math.min(this.sentences.length-1,this.index+1);if(this.playing||this.paused){if(this.index!==this._lastSpokenIndex||!this.synth.speaking){this.synth.cancel();setTimeout(()=>this.speakCurrent(true),60);}else{this.highlightCurrent();this.updateProgress();}}else{this.highlightCurrent();this.updateProgress();}}
-  speakCurrent(force){
+  pause(){
+    if(!this.playing)return;
+    this.engine.pause();
+    this.playing=false;this.paused=true;this.updateAll();
+  }
+  stop(){this.engine.stop();this.playing=false;this.paused=false;this.index=0;this._lastSpokenIndex=-1;this.clearHighlight();this.updateAll();}
+  previous(){this.index=Math.max(0,this.index-1);if(this.playing||this.paused){this.engine.stop();this.playing=true;this.paused=false;setTimeout(()=>this.speakCurrent(),60);}else{this.highlightCurrent();this.updateProgress();}}
+  next(){this.index=Math.min(this.sentences.length-1,this.index+1);if(this.playing||this.paused){this.engine.stop();this.playing=true;this.paused=false;setTimeout(()=>this.speakCurrent(),60);}else{this.highlightCurrent();this.updateProgress();}}
+  async speakCurrent(){
     if(!this.sentences.length){this.stop();return;}
     if(this.index>=this.sentences.length){
-      if(this.continuous&&window.PAGE_INFO?.nextPage){setTimeout(()=>window.location.href=PAGE_INFO.nextPage,600);} else this.stop();
+      if(this.continuous&&window.PAGE_INFO?.nextPage){setTimeout(()=>window.location.href=window.PAGE_INFO.nextPage,600);}else{this.stop();}
       return;
     }
-    if(!force && this.index===this._lastSpokenIndex && this.synth.speaking)return;
-    if(!this.ensureVoice()){setTimeout(()=>this.speakCurrent(force),400);return;}
-    const seg=this.sentences[this.index];
+    const myIndex=this.index;
+    const seg=this.sentences[myIndex];
     this.highlightElement(seg.el);this.updateProgress();
-    const u=new SpeechSynthesisUtterance(seg.text);
-    this._lastSpokenIndex=this.index;
-    u.voice=this.voice;u.rate=this.rate;u.pitch=this.pitch;u.volume=this.volume;
-    u.onend=()=>{if(!this.playing)return;if(this.index===this._lastSpokenIndex)this.index++;setTimeout(()=>this.speakCurrent(false),40);};
-    u.onerror=()=>{if(this.playing){this.index++;setTimeout(()=>this.speakCurrent(false),120);}};
-    try{this.synth.speak(u);}catch(err){console.error('[TTS] speak 失败',err);this.index++;if(this.playing)setTimeout(()=>this.speakCurrent(false),200);}
+    this._lastSpokenIndex=myIndex;
+    try{
+      await this.engine.speak(seg.text,this.rate,this.pitch,this.volume);
+    }catch(e){
+      if(!this.playing)return;
+      this.index++;setTimeout(()=>this.speakCurrent(),120);return;
+    }
+    if(!this.playing||this.index!==myIndex)return;
+    this.index++;setTimeout(()=>this.speakCurrent(),40);
   }
   highlightElement(el){this.clearHighlight();if(!el)return;el.classList.add('tts-active');const r=el.getBoundingClientRect(),vh=window.innerHeight;if(r.top<80||r.bottom>vh-120){el.scrollIntoView({behavior:'smooth',block:'center'});}}
   highlightCurrent(){const seg=this.sentences[this.index];if(seg)this.highlightElement(seg.el);}
@@ -577,7 +567,7 @@ class TTSDock{
   updateButtons(){const disabled=window.TTS_SUPPORTED===false;[this.btnPrev,this.btnPlay,this.btnNext,this.btnStop,this.btnMode].forEach(b=>{if(b)b.disabled=disabled;});}
   updateAll(){if(this.btnPlay)this.btnPlay.textContent=this.playing?'⏸️':'▶️';this.updateMode();this.updateProgress();this.updateButtons();}
 }
-document.addEventListener('DOMContentLoaded',()=>{if(window.TTS_SUPPORTED!==false)window._ttsDock=new TTSDock();});
+document.addEventListener('DOMContentLoaded',()=>{window._ttsDock=new TTSDock();});
 """
 
 # ================== SW 注册 (多候选探测) ==================

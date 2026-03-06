@@ -12,6 +12,7 @@
     "@capacitor/core": "^6.0.0",
     "@capacitor/app": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
+    "@capacitor-community/text-to-speech": "^6.0.0",
     "capacitor-apk-installer": "file:plugins/apk-installer"
   },
   "devDependencies": {

@@ -40,9 +40,12 @@ ADAPTIVE_XML = """<?xml version="1.0" encoding="utf-8"?>
 
 COLOR_XML = """<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#3366FF</color>
 </resources>
 """
+
+BRAND_BG = (0x33, 0x66, 0xFF, 255)  # #3366FF opaque
+
 
 if not os.path.isfile(ICON_SRC):
     print("No icon-512.png found, skipping icon generation.")
@@ -50,10 +53,14 @@ else:
     src = Image.open(ICON_SRC).convert("RGBA")
 
     # 1. Legacy ic_launcher.png and ic_launcher_round.png
+    # Composite onto solid brand-color background so transparent/white content is visible
     for density, size in LEGACY_SIZES.items():
         mipmap_dir = os.path.join(RES_DIR, "mipmap-{}".format(density))
         os.makedirs(mipmap_dir, exist_ok=True)
-        img = src.resize((size, size), Image.LANCZOS)
+        bg = Image.new("RGBA", (size, size), BRAND_BG)
+        icon = src.resize((size, size), Image.LANCZOS)
+        bg.paste(icon, (0, 0), icon)
+        img = bg.convert("RGB")
         for name in ("ic_launcher.png", "ic_launcher_round.png"):
             dst = os.path.join(mipmap_dir, name)
             img.save(dst)
