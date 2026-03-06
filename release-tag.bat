@@ -7,14 +7,16 @@ REM   release-tag.bat v1.2.3
 REM   release-tag.bat v1.2.3 --allow-dirty
 
 if "%~1"=="" (
-  echo Usage: %~nx0 ^<version^>
-  echo Example: %~nx0 1.2.3
-  echo Example: %~nx0 v1.2.3
-  echo Example: %~nx0 v1.2.3 --allow-dirty
-  exit /b 1
+  for /f "delims=" %%V in ('node -p "require('./app_config.json').version"') do set "CUR_VER=%%V"
+  echo Current version: !CUR_VER!
+  set /p "INPUT_VER=Enter new version (e.g. 1.2.3): "
+  if "!INPUT_VER!"=="" (
+    echo No version entered. Aborted.
+    exit /b 1
+  )
+) else (
+  set "INPUT_VER=%~1"
 )
-
-set "INPUT_VER=%~1"
 set "ALLOW_DIRTY=0"
 
 if /I "%~2"=="--allow-dirty" set "ALLOW_DIRTY=1"
