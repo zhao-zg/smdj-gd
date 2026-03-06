@@ -675,7 +675,7 @@ async function setupAdaptiveActions() {
         const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
         const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
         const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}`;
         if (pctEl) pctEl.textContent = pct + '%';
         if (fillEl) fillEl.style.width = pct + '%';
     });
@@ -717,7 +717,7 @@ async function setupAdaptiveActions() {
             const total2 = (info2.pages?.total||0)+(info2.statics?.total||0)+(info2.others?.total||0);
             const cached2 = (info2.pages?.cached||0)+(info2.statics?.cached||0)+(info2.others?.cached||0);
             const pct2 = total2 > 0 ? Math.min(100, Math.round(cached2/total2*100)) : 0;
-            if (infoBox2) infoBox2.textContent = `版本 ${info2.version||'-'}  期望 ${total2} 个  已缓存 ${cached2} 个`;
+            if (infoBox2) infoBox2.textContent = `版本 ${info2.version||'-'}  缓存 ${cached2}/${total2}`;
             if (pctEl2) pctEl2.textContent = pct2 + '%';
             if (fillEl2) fillEl2.style.width = pct2 + '%';
         }
@@ -749,7 +749,7 @@ window.addEventListener('load', () => {
         const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
         const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
         const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}`;
         if (pctEl) pctEl.textContent = pct + '%';
         if (fillEl) fillEl.style.width = pct + '%';
     }, 1200);
@@ -977,9 +977,8 @@ window.APP_VERSION="{self.app_version}";
 
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
         sw_code=sw_code.replace("/*__ALL_ASSETS__*/",json.dumps(all_assets,ensure_ascii=False))
-        # SW 版本 = app版本 + 构建时间戳，确保每次构建浏览器都检测到 SW 更新
-        import time as _time
-        _sw_ver = f"v{_app_ver}-{int(_time.time())}"
+        # SW 版本 = 构建月日时分秒(MMDDHHMMSS)，短版本号便于查看且避免同分钟碰撞
+        _sw_ver = datetime.now().strftime("%m%d%H%M%S")
         sw_code=sw_code.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
         # sw-register.js 的查询串同步更新，保证浏览器缓存失效
         sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_sw_ver}")
