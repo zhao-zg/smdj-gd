@@ -59,6 +59,12 @@ jobs:
       - name: Install Python dependencies
         run: pip install pillow
 
+      - name: Install CJK fonts for icon rendering
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
       - name: Build static site to output/
         shell: bash
         run: |

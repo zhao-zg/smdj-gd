@@ -919,8 +919,7 @@ window.APP_VERSION="{self.app_version}";
             "lang":"zh-CN",
             "icons":[
                 {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-                {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"},
-                {"src":"./icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}
+                {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
             ]
         }
         manifest_json = json.dumps(manifest,ensure_ascii=False,indent=2)
@@ -928,7 +927,7 @@ window.APP_VERSION="{self.app_version}";
         # 兼容历史引用
         self.output_dir.joinpath("manifest.webmanifest").write_text(manifest_json,encoding="utf-8")
 
-        # 生成简单 SVG 图标（避免缺少 scalable icon）
+        # Keep icon.svg generation for optional manual usage, but do not publish it in manifest.
         icon_svg = """<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#3366ff\"/><text x=\"50%\" y=\"56%\" text-anchor=\"middle\" font-size=\"180\" font-family=\"Microsoft YaHei, Noto Sans SC, PingFang SC, Arial, sans-serif\" fill=\"#ffffff\">共读</text></svg>"""
         self.icons_dir.joinpath("icon.svg").write_text(icon_svg, encoding="utf-8")
 
