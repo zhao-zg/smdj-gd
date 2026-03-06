@@ -57,8 +57,16 @@ def _load_font(font_file: Optional[str], size: int):
         try: return ImageFont.truetype(font_file,size)
         except Exception: pass
     candidates=[
+        # Ubuntu / Debian system paths
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        # Windows
         "NotoSansSC-Regular.otf","SourceHanSansSC-Regular.otf","NotoSansCJK-Regular.ttc",
-        "msyh.ttc","MicrosoftYaHei.ttc","Arial.ttf","Arial Unicode.ttf","/System/Library/Fonts/PingFang.ttc"
+        "msyh.ttc","MicrosoftYaHei.ttc","Arial.ttf","Arial Unicode.ttf",
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
     ]
     for fp in candidates:
         try: return ImageFont.truetype(fp,size)
