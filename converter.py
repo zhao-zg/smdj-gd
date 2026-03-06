@@ -468,7 +468,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <button id="btn-app-update" class="chip" type="button" style="display:none;">检查更新</button>
         <a id="btn-download-apk" class="chip" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
         <button id="btn-install-pwa" class="chip" type="button" style="display:none;">安装 PWA</button>
-        <button id="btn-cache-info" class="chip" type="button" style="display:none;">刷新缓存</button>
+        <button id="btn-cache-info" class="chip" type="button" style="display:none;">缓存状态</button>
         <button id="btn-clear-cache" class="chip" type="button" style="display:none;">清理缓存</button>
       </div>
       <div id="cache-status-box" style="margin-top:8px;display:none;">
@@ -530,7 +530,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <button id="btn-app-update" class="nav-btn" type="button" style="display:none;">检查更新</button>
         <a id="btn-download-apk" class="nav-btn" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
         <button id="btn-install-pwa" class="nav-btn" type="button" style="display:none;">安装 PWA</button>
-        <button id="btn-cache-info" class="nav-btn" type="button" style="display:none;">刷新缓存</button>
+        <button id="btn-cache-info" class="nav-btn" type="button" style="display:none;">缓存状态</button>
         <button id="btn-clear-cache" class="nav-btn" type="button" style="display:none;">清理缓存</button>
     </div>
     <div id="cache-status-box">
