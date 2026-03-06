@@ -889,14 +889,18 @@ window.APP_VERSION="{self.app_version}";
                     print(f"  ⏩ 跳过 {path.name}")
                     continue
                 try:
+                    base_font = self.icon_font_size if size==192 else int(self.icon_font_size*2.6)
+                    base_padding = int(self.icon_padding if size==192 else self.icon_padding*(size/192))
+                    # App icons use one smaller tier than default.
+                    app_padding = max(base_padding + int(size*0.08), int(size*0.12))
                     generate_icon(
                         path=path,size=size,text=txt,
                         bg=self.icon_bg,fg=self.icon_fg,
-                        base_font=self.icon_font_size if size==192 else int(self.icon_font_size*2.6),
+                        base_font=max(12, int(base_font*0.86)),
                         radius=self.icon_radius if size==192 else int(self.icon_radius*(size/192)),
                         font_file=self.icon_font_file,
                         auto_scale=self.icon_auto_scale,
-                        padding=int(self.icon_padding if size==192 else self.icon_padding*(size/192)),
+                        padding=app_padding,
                         center_mode=self.icon_center_mode,
                         optical=self.icon_optical_adjust
                     )
@@ -905,8 +909,43 @@ window.APP_VERSION="{self.app_version}";
                     print("  ⚠️ 生成失败占位:",path.name,e)
                     data=_safe_b64_decode(BASE64_ICON_192 if size==192 else BASE64_ICON_512)
                     path.write_bytes(data)
+
+            # Generate dedicated PWA icons with extra padding so text looks slightly smaller
+            # on home screen, while keeping icon-192/512 unchanged for Android packaging.
+            pwa_targets=[(self.icons_dir/"pwa-icon-192.png",192),(self.icons_dir/"pwa-icon-512.png",512)]
+            for path,size in pwa_targets:
+                if path.exists() and not self.force_regen_icons:
+                    print(f"  ⏩ 跳过 {path.name}")
+                    continue
+                try:
+                    base_font = self.icon_font_size if size==192 else int(self.icon_font_size*2.6)
+                    base_padding = int(self.icon_padding if size==192 else self.icon_padding*(size/192))
+                    # PWA icons are two tiers smaller than app icons.
+                    pwa_padding = max(base_padding + int(size*0.16), int(size*0.20))
+                    generate_icon(
+                        path=path,size=size,text=txt,
+                        bg=self.icon_bg,fg=self.icon_fg,
+                        base_font=max(12, int(base_font*0.70)),
+                        radius=self.icon_radius if size==192 else int(self.icon_radius*(size/192)),
+                        font_file=self.icon_font_file,
+                        auto_scale=self.icon_auto_scale,
+                        padding=pwa_padding,
+                        center_mode=self.icon_center_mode,
+                        optical=self.icon_optical_adjust
+                    )
+                    print("  ✅ 生成",path.name)
+                except Exception as e:
+                    print("  ⚠️ 生成失败，回退到标准图标:",path.name,e)
+                    fallback = self.icons_dir/("icon-192.png" if size==192 else "icon-512.png")
+                    if fallback.exists():
+                        shutil.copy2(fallback, path)
         else:
             print("🚫 跳过图标生成 (--no-generate-icons)")
+
+        pwa_icon_192 = self.icons_dir / "pwa-icon-192.png"
+        pwa_icon_512 = self.icons_dir / "pwa-icon-512.png"
+        pwa_icon_192_src = "./icons/pwa-icon-192.png" if pwa_icon_192.exists() else "./icons/icon-192.png"
+        pwa_icon_512_src = "./icons/pwa-icon-512.png" if pwa_icon_512.exists() else "./icons/icon-512.png"
 
         manifest={
             "name": "共读",
@@ -918,8 +957,8 @@ window.APP_VERSION="{self.app_version}";
             "theme_color": "#ffffff",
             "lang":"zh-CN",
             "icons":[
-                {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-                {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+                {"src":pwa_icon_192_src,"sizes":"192x192","type":"image/png","purpose":"any maskable"},
+                {"src":pwa_icon_512_src,"sizes":"512x512","type":"image/png","purpose":"any maskable"}
             ]
         }
         manifest_json = json.dumps(manifest,ensure_ascii=False,indent=2)

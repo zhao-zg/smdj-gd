@@ -154,7 +154,7 @@ function initControls() {
         const total  = (info.pages?.total  || 0) + (info.statics?.total  || 0) + (info.others?.total  || 0);
         const cached = (info.pages?.cached || 0) + (info.statics?.cached || 0) + (info.others?.cached || 0);
         const pct    = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  期望 ${total} 个  已缓存 ${cached} 个`;
+        if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  缓存 ${cached}/${total}`;
         if (pctEl)   pctEl.textContent   = pct + '%';
         if (fillEl)  fillEl.style.width  = pct + '%';
       };
