@@ -259,11 +259,11 @@ class EPUBToHTMLConverter:
         )
         reader_js=reader_js.replace(
             "const url=prefix+'page_'+String(target).padStart(4,'0')+'/';",
-            "const url=prefix+'page_'+String(target).padStart(4,'0')+'.html';"
+            "const url=prefix+'page_'+String(target).padStart(4,'0')+'.htm';"
         )
         reader_js=reader_js.replace(
-            "const correct=(pageInfo.current===-1)?'index.html':'../index.html';",
-            "const correct=(pageInfo.current===-1)?'index.html':('index.html?from='+pageInfo.current);"
+            "const correct=(pageInfo.current===-1)?'index.htm':'../index.htm';",
+            "const correct=(pageInfo.current===-1)?'index.htm':('index.htm?from='+pageInfo.current);"
         )
         self.assets_js_dir.joinpath("reader.js").write_text(reader_js,encoding="utf-8")
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
@@ -314,7 +314,7 @@ class EPUBToHTMLConverter:
             low=url.lower()
             if low.startswith(('http://','https://','mailto:','data:')) or low.startswith('#'):
                 return m.group(0)
-            if re.match(r'(\.\./)?page_\d{4}\.html',url):
+            if re.match(r'(\.\./)?page_\d{4}\.htm',url):
                 return m.group(0)
             if '#' in url:
                 main,frag=url.split('#',1)
@@ -330,7 +330,7 @@ class EPUBToHTMLConverter:
                         target=v;break
             if target is None:
                 return m.group(0)
-            new_href=f'{prefix}page_{target:04d}.html'
+            new_href=f'{prefix}page_{target:04d}.htm'
             if frag: new_href+=f'#{frag}'
             return f'{pre}{new_href}{suf}'
         body=link_pattern.sub(repl_link,body)
@@ -341,12 +341,12 @@ class EPUBToHTMLConverter:
         total=len(self.spine_items)
         for idx,href in enumerate(self.spine_items):
             src=self.opf_dir/href
-            page_file=self.output_dir/f"page_{idx:04d}.html"
+            page_file=self.output_dir/f"page_{idx:04d}.htm"
             filename=href.lower().split('/')[-1]
             if (filename in self._toc_filename_set) and not self.keep_epub_toc:
                 redirect_html=self._build_redirect_page(idx,total)
                 page_file.write_text(redirect_html,encoding="utf-8")
-                print(f"➡️ TOC 重定向 page_{idx:04d}.html")
+                print(f"➡️ TOC 重定向 page_{idx:04d}.htm")
                 continue
             if not src.exists():
                 print("⚠️ 缺失:",href);continue
@@ -355,24 +355,24 @@ class EPUBToHTMLConverter:
             body=self._clean_body(body,True)
             html_out=self._build_content_page(body,idx,total)
             page_file.write_text(html_out,encoding="utf-8")
-            print(f"✅ page_{idx:04d}.html")
+            print(f"✅ page_{idx:04d}.htm")
 
     def _build_redirect_page(self,idx:int,total:int)->str:
         return f"""<!DOCTYPE html><html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <title>目录重定向</title>
-<meta http-equiv="refresh" content="0;url=index.html">
-<script>location.replace('index.html');</script>
+<meta http-equiv="refresh" content="0;url=index.htm">
+<script>location.replace('index.htm');</script>
 <link rel="stylesheet" href="assets/css/core.css">
 <link rel="stylesheet" href="assets/css/themes.css">
 <link rel="stylesheet" href="assets/css/extra.css">
 </head><body>
-<p>跳转到目录... <a href="index.html">若未跳转点击</a></p>
+<p>跳转到目录... <a href="index.htm">若未跳转点击</a></p>
 </body></html>"""
 
     def _build_content_page(self,body:str,idx:int,total:int)->str:
-        prev=f"page_{idx-1:04d}.html" if idx>0 else None
-        next=f"page_{idx+1:04d}.html" if idx<total-1 else None
+        prev=f"page_{idx-1:04d}.htm" if idx>0 else None
+        next=f"page_{idx+1:04d}.htm" if idx<total-1 else None
         page_title=self._toc_title_by_index(idx) or f"第 {idx+1} 页"
         body=self._replace_first_heading(body, page_title)
         today_btn=""
@@ -407,7 +407,7 @@ class EPUBToHTMLConverter:
   <nav class="nav">
     <div class="nav-buttons">
       {prev_btn}
-        <a class="nav-btn" data-nav="toc" href="index.html?from={idx}">目录</a>
+        <a class="nav-btn" data-nav="toc" href="index.htm?from={idx}">目录</a>
       {today_btn}
       {next_btn}
     </div>
@@ -661,11 +661,11 @@ window.addEventListener('load', () => {
             idx=self._find_spine_index(item['href'])
             if idx is not None:
                 items.append(
-                    f'<li id="toc-item-{idx:04d}"><a href="page_{idx:04d}.html">{html.escape(item["title"] or "无标题")}</a></li>'
+                    f'<li id="toc-item-{idx:04d}"><a href="page_{idx:04d}.htm">{html.escape(item["title"] or "无标题")}</a></li>'
                 )
         if not items:
             for i in range(len(self.spine_items)):
-                items.append(f'<li><a href="page_{i:04d}.html">第 {i+1} 页</a></li>')
+                items.append(f'<li><a href="page_{i:04d}.htm">第 {i+1} 页</a></li>')
         toc_html="\n      ".join(items)
         total=len(self.spine_items)
         today_btn=""
@@ -691,7 +691,7 @@ window.addEventListener('load', () => {
   <nav class="nav">
     <div class="nav-buttons">
       <a class="nav-btn disabled" data-nav="prev" aria-hidden="true">←</a>
-      <a class="nav-btn" data-nav="toc" href="index.html">目录</a>
+      <a class="nav-btn" data-nav="toc" href="index.htm">目录</a>
       {today_btn}
       <a class="nav-btn disabled" data-nav="next" aria-hidden="true">→</a>
     </div>
@@ -721,7 +721,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 {self._pwa_actions_script()}
 </body>
 </html>"""
-        (self.output_dir/"index.html").write_text(index_html,encoding="utf-8")
+        (self.output_dir/"index.htm").write_text(index_html,encoding="utf-8")
         print("📚 目录页完成")
 
     def _find_spine_index(self,href:str)->Optional[int]:
@@ -788,7 +788,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
             "name": "共读",
             "short_name": "共读",
             "description": "共读 离线阅读应用",
-            "start_url": "./index.html",
+            "start_url": "./index.htm",
             "display": "standalone",
             "background_color": "#ffffff",
             "theme_color": "#3366ff",
@@ -831,8 +831,8 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 """
         self.output_dir.joinpath("_headers").write_text(headers_text, encoding="utf-8")
 
-        self.output_dir.joinpath("offline.html").write_text(OFFLINE_HTML,encoding="utf-8")
-        page_files=[f"page_{i:04d}.html" for i in range(len(self.spine_items))]
+        self.output_dir.joinpath("offline.htm").write_text(OFFLINE_HTML,encoding="utf-8")
+        page_files=[f"page_{i:04d}.htm" for i in range(len(self.spine_items))]
 
         # Build full local asset manifest for eager PWA precache.
         # Exclude SW itself, headers metadata, and large APK binaries.
