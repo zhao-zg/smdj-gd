@@ -89,6 +89,29 @@ if not errorlevel 1 (
   exit /b 1
 )
 
+echo Updating app_config.json version to %RAW_VER%...
+node -e "const fs=require('fs'),f='app_config.json',o=JSON.parse(fs.readFileSync(f,'utf8'));o.version='%RAW_VER%';fs.writeFileSync(f,JSON.stringify(o,null,2)+'\n','utf8');"
+if errorlevel 1 (
+  echo Failed to update app_config.json.
+  exit /b 1
+)
+
+git add app_config.json
+git commit -m "chore: bump version to %RAW_VER%"
+if errorlevel 1 (
+  echo Failed to commit version bump.
+  exit /b 1
+)
+
+echo Pushing version bump commit...
+git push origin HEAD
+if errorlevel 1 (
+  echo Failed to push commit. Rolling back...
+  git reset --soft HEAD~1
+  git restore app_config.json
+  exit /b 1
+)
+
 echo Creating tag %TAG% on current HEAD...
 git tag -a "%TAG%" -m "Release %TAG%"
 if errorlevel 1 (

@@ -671,7 +671,6 @@ const OTHER_CACHE  = 'other-'  + VERSION;
 
 const CORE_ASSETS = [
   './',
-  './index.html',
   './offline.html',
   './manifest.json',
   './manifest.webmanifest',
@@ -708,11 +707,14 @@ function normalizeAssetPath(path){
   if(!path) return '';
   if(path === './' || path === '/') return './';
   const p=String(path).trim().replace(/^\/+/, '');
-  return p.startsWith('./') ? p : ('./' + p);
+  const norm = p.startsWith('./') ? p : ('./' + p);
+  if(norm === './index.html') return './';
+  return norm;
 }
 function classifyAsset(path){
   const p=normalizeAssetPath(path).toLowerCase();
-  if(!p || p==='./') return 'static';
+  if(!p) return 'static';
+  if(p==='./') return 'page';
   if(p.endsWith('.apk')) return 'skip';
   if(/\/(?:page_\d{4}\.html)$/.test(p) || /^\.\/page_\d{4}\.html$/.test(p)) return 'page';
   if(p.endsWith('/index.html') || p === './index.html' || p.endsWith('.html')) return 'page';
@@ -741,7 +743,7 @@ function splitPrecacheTargets(){
   const staticTargets=[];
   const otherTargets=[];
 
-  const pageCandidates=['./index.html','./offline.html',...PAGE_LIST.map(p=>'./'+p)];
+  const pageCandidates=['./','./offline.html',...PAGE_LIST.map(p=>'./'+p)];
   const allCandidates=[...CORE_ASSETS,...ALL_ASSETS];
 
   for(const path of uniqueList([...pageCandidates,...allCandidates])){
