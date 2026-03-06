@@ -13,3 +13,7 @@ keystore.properties
 
 # Capacitor generated native platform (rebuilt by CI)
 /android/
+
+# Gradle caches
+.gradle/
+build/
