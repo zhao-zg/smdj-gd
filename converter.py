@@ -483,7 +483,19 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
     </div>
     <button id="close-settings" class="close-btn">完成</button>
   </div>
-</aside>"""
+</aside>
+<div id="apk-download-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+  <div style="background:var(--c-bg);border-radius:16px;padding:28px 24px;width:min(320px,88vw);box-shadow:0 8px 32px rgba(0,0,0,.3);">
+    <div style="font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--c-fg);" id="apk-dl-title">正在下载更新…</div>
+    <div style="height:8px;border-radius:6px;background:var(--c-surface);overflow:hidden;margin-bottom:10px;">
+      <div id="apk-dl-bar" style="height:100%;background:var(--c-accent);border-radius:6px;width:0%;transition:width .2s linear;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.85rem;color:var(--c-fg-soft);">
+      <span id="apk-dl-pct">0%</span>
+      <span id="apk-dl-size">0 KB</span>
+    </div>
+  </div>
+</div>"""
 
     def _tts_dock_html(self)->str:
         return """<div class="tts-dock" id="tts-dock" data-visible="false">
@@ -530,7 +542,19 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <div id="cache-progress-fill" style="height:100%;background:var(--c-accent);border-radius:4px;width:0%;transition:width .4s ease;"></div>
       </div>
     </div>
-</section>"""
+</section>
+<div id="apk-download-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+  <div style="background:var(--c-bg);border-radius:16px;padding:28px 24px;width:min(320px,88vw);box-shadow:0 8px 32px rgba(0,0,0,.3);">
+    <div style="font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--c-fg);" id="apk-dl-title">正在下载更新…</div>
+    <div style="height:8px;border-radius:6px;background:var(--c-surface);overflow:hidden;margin-bottom:10px;">
+      <div id="apk-dl-bar" style="height:100%;background:var(--c-accent);border-radius:6px;width:0%;transition:width .2s linear;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.85rem;color:var(--c-fg-soft);">
+      <span id="apk-dl-pct">0%</span>
+      <span id="apk-dl-size">0 KB</span>
+    </div>
+  </div>
+</div>"""
 
     def _pwa_actions_script(self) -> str:
         return """<script>
@@ -954,6 +978,12 @@ window.APP_VERSION="{self.app_version}";
 
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
         sw_code=sw_code.replace("/*__ALL_ASSETS__*/",json.dumps(all_assets,ensure_ascii=False))
-        sw_code=sw_code.replace("/*__SW_VERSION__*/",json.dumps(f"v{_app_ver}"))
+        # SW 版本 = app版本 + 构建时间戳，确保每次构建浏览器都检测到 SW 更新
+        import time as _time
+        _sw_ver = f"v{_app_ver}-{int(_time.time())}"
+        sw_code=sw_code.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
+        # sw-register.js 的查询串同步更新，保证浏览器缓存失效
+        sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_sw_ver}")
+        self.assets_js_dir.joinpath("sw-register.js").write_text(sw_register_code, encoding="utf-8")
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
         print("📦 已写出 PWA (manifest/version/sw/offline/_headers)")

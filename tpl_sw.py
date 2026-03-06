@@ -123,7 +123,11 @@ async function precacheTo(cacheName, assets){
     await Promise.all(batch.map(async asset=>{
       try{
         const res=await fetch(new Request(asset,{cache:'no-store'}));
-        if(res && res.ok){await cache.put(new Request(asset),res.clone());okCount++;}
+        if(res && res.ok){
+          /* 用绝对 URL 字符串作 key，保证 cache.match 时一致 */
+          const absUrl=new URL(asset,self.location.href).href;
+          await cache.put(absUrl,res.clone());okCount++;
+        }
       }catch(_){}
     }));
   }
@@ -208,9 +212,11 @@ async function handleNavigation(event){
 }
 async function cacheFirstRevalidate(req,cacheName){
   const cache=await caches.open(cacheName);
-  const cached=await cache.match(req);
+  /* 统一用绝对 URL 字符串查询，与 precacheTo 存储方式一致 */
+  const absUrl=new URL(req.url,self.location.href).href;
+  const cached=await cache.match(absUrl);
   const fetchPromise=fetch(req).then(r=>{
-    if(r && r.ok) cache.put(req,r.clone());
+    if(r && r.ok) cache.put(absUrl,r.clone());
     return r;
   }).catch(()=>null);
   if(cached){
@@ -316,9 +322,18 @@ self.addEventListener('message', (event) => {
         const targets = splitPrecacheTargets();
         // 统计期望列表里实际已缓存的数量（而非 cache 桶的总条目数）
         const [matchedPages, matchedStatics, matchedOthers] = await Promise.all([
-          Promise.all(targets.pageTargets.map(p => pageCache.match(p))).then(rs => rs.filter(Boolean).length),
-          Promise.all(targets.staticTargets.map(p => staticCache.match(p))).then(rs => rs.filter(Boolean).length),
-          Promise.all(targets.otherTargets.map(p => otherCache.match(p))).then(rs => rs.filter(Boolean).length),
+          Promise.all(targets.pageTargets.map(p => {
+            const abs=new URL(p,self.location.href).href;
+            return pageCache.match(abs);
+          })).then(rs => rs.filter(Boolean).length),
+          Promise.all(targets.staticTargets.map(p => {
+            const abs=new URL(p,self.location.href).href;
+            return staticCache.match(abs);
+          })).then(rs => rs.filter(Boolean).length),
+          Promise.all(targets.otherTargets.map(p => {
+            const abs=new URL(p,self.location.href).href;
+            return otherCache.match(abs);
+          })).then(rs => rs.filter(Boolean).length),
         ]);
         port.postMessage({
           ok: true,

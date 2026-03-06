@@ -181,6 +181,29 @@ APP_UPDATE_JS = r"""
     throw lastErr || new Error('No supported installer method');
   }
 
+  function _dlOverlay(show) {
+    const o = document.getElementById('apk-download-overlay');
+    if (!o) return;
+    o.style.display = show ? 'flex' : 'none';
+  }
+  function _dlProgress(loaded, total) {
+    const bar  = document.getElementById('apk-dl-bar');
+    const pct  = document.getElementById('apk-dl-pct');
+    const size = document.getElementById('apk-dl-size');
+    const title = document.getElementById('apk-dl-title');
+    if (total > 0) {
+      const p = Math.min(100, (loaded / total * 100)).toFixed(1);
+      if (bar) bar.style.width = p + '%';
+      if (pct) pct.textContent = p + '%';
+      if (size) size.textContent = (loaded/1048576).toFixed(1) + ' / ' + (total/1048576).toFixed(1) + ' MB';
+      if (title) title.textContent = '正在下载更新…';
+    } else {
+      if (bar) bar.style.width = '0%';
+      if (pct) pct.textContent = '下载中…';
+      if (size) size.textContent = (loaded/1024).toFixed(0) + ' KB';
+    }
+  }
+
   async function checkForUpdates(silent = false) {
     if (!isNative()) {
       return { ok: false, skipped: true, reason: 'not-native' };
@@ -204,20 +227,19 @@ APP_UPDATE_JS = r"""
     if (!urls.length) throw new Error('No APK URL candidates');
 
     const savePath = `updates/smdj-gd-${remoteVersion}.apk`;
-    const progressEl = document.getElementById('cache-info');
-    const onProgress = (loaded, total) => {
-      if (!progressEl) return;
-      if (total > 0) {
-        const p = ((loaded / total) * 100).toFixed(1);
-        progressEl.textContent = `更新下载中: ${p}% (${Math.floor(loaded / 1024)}KB / ${Math.floor(total / 1024)}KB)`;
-      } else {
-        progressEl.textContent = `更新下载中: ${Math.floor(loaded / 1024)}KB`;
-      }
-    };
+    _dlOverlay(true);
+    const onProgress = (loaded, total) => _dlProgress(loaded, total);
 
-    const fileInfo = await tryDownloadToFile(urls, savePath, onProgress);
-    await installApkByPlugin(fileInfo);
-    if (progressEl) progressEl.textContent = '已触发安装器，请在系统安装界面确认安装';
+    try {
+      const fileInfo = await tryDownloadToFile(urls, savePath, onProgress);
+      const titleEl = document.getElementById('apk-dl-title');
+      if (titleEl) titleEl.textContent = '安装中，请在系统弹窗确认…';
+      await installApkByPlugin(fileInfo);
+      _dlOverlay(false);
+    } catch (e) {
+      _dlOverlay(false);
+      throw e;
+    }
     return { ok: true, update: true, installed: true, remoteVersion };
   }
 

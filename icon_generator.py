@@ -97,7 +97,7 @@ def generate_icon(path: Path,size:int,text:str,bg:str,fg:str,base_font:int,radiu
         data=_safe_b64_decode(BASE64_ICON_192 if size==192 else BASE64_ICON_512)
         path.write_bytes(data); return
     bg_rgb=_hex_to_rgb(bg); fg_rgb=_hex_to_rgb(fg)
-    img=Image.new("RGBA",(size,size),(0,0,0,0))
+    img=Image.new("RGBA",(size,size),bg_rgb+(255,))
     draw=ImageDraw.Draw(img)
     r=max(0,min(radius,size//2)); pad=max(0,min(padding,size//3))
     if r>0:
