@@ -448,17 +448,17 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
     <div class="setting">
       <label>字体</label>
       <div class="chips" id="font-family-choices">
-        <button data-font="sans" class="chip active">Sans</button>
-        <button data-font="serif" class="chip">Serif</button>
-        <button data-font="dyslexic" class="chip">Dyslexic</button>
+        <button data-font="sans" class="chip active">无衬线</button>
+        <button data-font="serif" class="chip">衬线</button>
+        <button data-font="dyslexic" class="chip">易读</button>
       </div>
     </div>
     <div class="setting">
       <label>主题</label>
       <div class="chips" id="theme-choices">
-        <button data-theme="auto" class="chip active">Auto</button>
-        <button data-theme="light" class="chip">Light</button>
-        <button data-theme="dark" class="chip">Dark</button>
+        <button data-theme="auto" class="chip active">跟随系统</button>
+        <button data-theme="light" class="chip">浅色</button>
+        <button data-theme="dark" class="chip">深色</button>
       </div>
     </div>
     <div class="setting">
@@ -470,14 +470,14 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
     </div>
     <div class="setting">
       <label>应用</label>
-      <div class="chips" style="flex-wrap:wrap;gap:8px;">
+      <div class="chips">
         <button id="btn-app-update" class="chip" type="button" style="display:none;">检查更新</button>
         <a id="btn-download-apk" class="chip" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
         <button id="btn-install-pwa" class="chip" type="button" style="display:none;">安装 PWA</button>
         <button id="btn-cache-info" class="chip" type="button" style="display:none;">缓存数据</button>
         <button id="btn-clear-cache" class="chip" type="button" style="display:none;">清理缓存</button>
       </div>
-      <div id="cache-info" style="margin-top:8px;font-size:.8rem;color:var(--c-fg-soft);white-space:pre-wrap;"></div>
+      <div id="cache-info" style="margin-top:8px;font-size:.8rem;color:var(--c-fg-soft);white-space:pre-wrap;">缓存状态：未查询</div>
     </div>
     <button id="close-settings" class="close-btn">完成</button>
   </div>
@@ -815,10 +815,15 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
         icon_svg = """<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#3366ff\"/><text x=\"50%\" y=\"56%\" text-anchor=\"middle\" font-size=\"180\" font-family=\"Microsoft YaHei, Noto Sans SC, PingFang SC, Arial, sans-serif\" fill=\"#ffffff\">共读</text></svg>"""
         self.icons_dir.joinpath("icon.svg").write_text(icon_svg, encoding="utf-8")
 
+        cfg_path = Path(__file__).parent / "app_config.json"
+        try:
+            _app_ver = json.loads(cfg_path.read_text(encoding="utf-8")).get("version", "1.0.0")
+        except Exception:
+            _app_ver = "1.0.0"
         version_info = {
-            "version": "1.0.0",
-            "apk_version": "1.0.0",
-            "apk_file": f"{self.epub_path.stem}-v1.0.0.apk",
+            "version": _app_ver,
+            "apk_version": _app_ver,
+            "apk_file": f"{self.epub_path.stem}-v{_app_ver}.apk",
         }
         self.output_dir.joinpath("version.json").write_text(
             json.dumps(version_info, ensure_ascii=False, indent=2),
@@ -856,5 +861,6 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
         sw_code=sw_code.replace("/*__ALL_ASSETS__*/",json.dumps(all_assets,ensure_ascii=False))
+        sw_code=sw_code.replace("/*__SW_VERSION__*/",json.dumps(f"v{_app_ver}"))
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
         print("📦 已写出 PWA (manifest/version/sw/offline/_headers)")

@@ -661,8 +661,8 @@ SW_REGISTER_JS = r"""
 
 # ================== Service Worker 模板 (延迟后台刷新) ==================
 SERVICE_WORKER_JS_NEW = r"""
-/* Service Worker v7.3.0 – full-site precache after install */
-const VERSION = 'v7.3.0';
+/* Service Worker – full-site precache after install */
+const VERSION = /*__SW_VERSION__*/;
 const DEBUG   = false;
 
 const STATIC_CACHE = 'static-' + VERSION;
