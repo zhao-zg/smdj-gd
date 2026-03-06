@@ -757,8 +757,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
             if self.icon_text_input:
                 txt=self.icon_text_input.strip()
             else:
-                stem=self.epub_path.stem.strip()
-                txt=next((c for c in stem if c.isalpha()),"R").upper()
+                txt="共读"
             print("🖍 图标文字:",txt)
             targets=[(self.icons_dir/"icon-192.png",192),(self.icons_dir/"icon-512.png",512)]
             for path,size in targets:
@@ -786,9 +785,9 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
             print("🚫 跳过图标生成 (--no-generate-icons)")
 
         manifest={
-            "name": f"{self.epub_path.stem} 阅读器",
-            "short_name": self.epub_path.stem[:12],
-            "description": f"{self.epub_path.stem} 离线阅读应用",
+            "name": "共读",
+            "short_name": "共读",
+            "description": "共读 离线阅读应用",
             "start_url": "./index.html",
             "display": "standalone",
             "background_color": "#ffffff",
@@ -806,7 +805,7 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
         self.output_dir.joinpath("manifest.webmanifest").write_text(manifest_json,encoding="utf-8")
 
         # 生成简单 SVG 图标（避免缺少 scalable icon）
-        icon_svg = """<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#3366ff\"/><text x=\"50%\" y=\"56%\" text-anchor=\"middle\" font-size=\"220\" font-family=\"Arial, sans-serif\" fill=\"#ffffff\">R</text></svg>"""
+        icon_svg = """<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#3366ff\"/><text x=\"50%\" y=\"56%\" text-anchor=\"middle\" font-size=\"180\" font-family=\"Microsoft YaHei, Noto Sans SC, PingFang SC, Arial, sans-serif\" fill=\"#ffffff\">共读</text></svg>"""
         self.icons_dir.joinpath("icon.svg").write_text(icon_svg, encoding="utf-8")
 
         version_info = {
@@ -834,6 +833,21 @@ window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
 
         self.output_dir.joinpath("offline.html").write_text(OFFLINE_HTML,encoding="utf-8")
         page_files=[f"page_{i:04d}.html" for i in range(len(self.spine_items))]
+
+        # Build full local asset manifest for eager PWA precache.
+        # Exclude SW itself, headers metadata, and large APK binaries.
+        all_assets = []
+        for p in sorted(self.output_dir.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(self.output_dir).as_posix()
+            if rel in {"sw.js", "_headers"}:
+                continue
+            if rel.lower().endswith(".apk"):
+                continue
+            all_assets.append(f"./{rel}")
+
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
+        sw_code=sw_code.replace("/*__ALL_ASSETS__*/",json.dumps(all_assets,ensure_ascii=False))
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
         print("📦 已写出 PWA (manifest/version/sw/offline/_headers)")

@@ -1,6 +1,6 @@
 {
   "appId": "com.zhaozg.smdjgd",
-  "appName": "smdj-gd",
+  "appName": "共读",
   "webDir": "output",
   "android": {
     "allowMixedContent": true,

@@ -224,8 +224,10 @@ APP_UPDATE_JS = r"""
 /* APK self-update for Capacitor Android */
 (() => {
   const UPDATE_ENDPOINTS = [
-    'https://smdj-gd.pages.dev/version.json',
+    new URL('version.json', window.location.href).href,
     './version.json',
+    'https://smdj-gd.pages.dev/version.json',
+    'https://zhao-zg.github.io/smdj-gd/version.json',
   ];
   const APK_PATH_FALLBACK = 'downloads/smdj-gd-latest.apk';
   const CHUNK_SIZE = 256 * 1024;
@@ -620,9 +622,9 @@ SW_REGISTER_JS = r"""
   if(!('serviceWorker' in navigator)) return;
 
   const CANDIDATES = [
-    '/sw.js?v=7.2.1',
-    './sw.js?v=7.2.1',
-    '../sw.js?v=7.2.1'
+    '/sw.js?v=7.3.0',
+    './sw.js?v=7.3.0',
+    '../sw.js?v=7.3.0'
   ];
 
   async function probe(url){
@@ -659,8 +661,8 @@ SW_REGISTER_JS = r"""
 
 # ================== Service Worker 模板 (延迟后台刷新) ==================
 SERVICE_WORKER_JS_NEW = r"""
-/* Service Worker v7.2.1 – optimized delayed background caching */
-const VERSION = 'v7.2.1';
+/* Service Worker v7.3.0 – full-site precache after install */
+const VERSION = 'v7.3.0';
 const DEBUG   = false;
 
 const STATIC_CACHE = 'static-' + VERSION;
@@ -669,6 +671,7 @@ const OTHER_CACHE  = 'other-'  + VERSION;
 
 const CORE_ASSETS = [
   './',
+  './index.html',
   './offline.html',
   './manifest.json',
   './manifest.webmanifest',
@@ -682,6 +685,7 @@ const CORE_ASSETS = [
 ];
 
 const PAGE_LIST = /*__PAGE_DIRS__*/;
+const ALL_ASSETS = /*__ALL_ASSETS__*/;
 
 const NAV_TIMEOUT     = 15000;
 const RESCAN_INTERVAL = 1000 * 60 * 60;
@@ -698,6 +702,71 @@ function isHTMLResponse(res){
 async function networkFetchWithTimeout(req){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),NAV_TIMEOUT);
   try{const r=await fetch(req,{signal:c.signal});clearTimeout(t);return r;}catch(e){clearTimeout(t);throw e;}
+}
+function uniqueList(list){ return [...new Set(list.filter(Boolean))]; }
+function normalizeAssetPath(path){
+  if(!path) return '';
+  if(path === './' || path === '/') return './';
+  const p=String(path).trim().replace(/^\/+/, '');
+  return p.startsWith('./') ? p : ('./' + p);
+}
+function classifyAsset(path){
+  const p=normalizeAssetPath(path).toLowerCase();
+  if(!p || p==='./') return 'static';
+  if(p.endsWith('.apk')) return 'skip';
+  if(/\/(?:page_\d{4}\.html)$/.test(p) || /^\.\/page_\d{4}\.html$/.test(p)) return 'page';
+  if(p.endsWith('/index.html') || p === './index.html' || p.endsWith('.html')) return 'page';
+  if(/\.(css|js|woff2?|ttf|otf|json|webmanifest|map)$/i.test(p)) return 'static';
+  if(/\.(png|jpe?g|gif|webp|svg|avif|ico)$/i.test(p)) return 'other';
+  return 'other';
+}
+async function precacheTo(cacheName, assets){
+  const cache=await caches.open(cacheName);
+  let okCount=0;
+  for(const asset of uniqueList(assets.map(normalizeAssetPath))){
+    if(!asset || classifyAsset(asset)==='skip') continue;
+    try{
+      const req=new Request(asset,{cache:'no-store'});
+      const res=await fetch(req);
+      if(res && res.ok){
+        await cache.put(req,res.clone());
+        okCount++;
+      }
+    }catch(_){ }
+  }
+  return okCount;
+}
+function splitPrecacheTargets(){
+  const pageTargets=[];
+  const staticTargets=[];
+  const otherTargets=[];
+
+  const pageCandidates=['./index.html','./offline.html',...PAGE_LIST.map(p=>'./'+p)];
+  const allCandidates=[...CORE_ASSETS,...ALL_ASSETS];
+
+  for(const path of uniqueList([...pageCandidates,...allCandidates])){
+    const cls=classifyAsset(path);
+    const normalized=normalizeAssetPath(path);
+    if(!normalized || cls==='skip') continue;
+    if(cls==='page') pageTargets.push(normalized);
+    else if(cls==='static') staticTargets.push(normalized);
+    else otherTargets.push(normalized);
+  }
+
+  return {
+    pageTargets: uniqueList(pageTargets),
+    staticTargets: uniqueList(staticTargets),
+    otherTargets: uniqueList(otherTargets),
+  };
+}
+async function fullPrecache(reason){
+  const targets=splitPrecacheTargets();
+  const [pc,sc,oc]=await Promise.all([
+    precacheTo(PAGE_CACHE,targets.pageTargets),
+    precacheTo(STATIC_CACHE,targets.staticTargets),
+    precacheTo(OTHER_CACHE,targets.otherTargets),
+  ]);
+  log('fullPrecache',reason,{page:pc,stat:sc,other:oc});
 }
 function normalizePagePath(pathname){
   pathname=pathname.replace(/\/index\.html$/,'/');
@@ -760,8 +829,7 @@ async function cacheFirstRevalidate(req,cacheName){
 }
 self.addEventListener('install',e=>{
   e.waitUntil((async()=>{
-    const sc=await caches.open(STATIC_CACHE);
-    await sc.addAll(CORE_ASSETS);
+    await fullPrecache('install');
   })());
   self.skipWaiting();
 });
@@ -772,6 +840,7 @@ self.addEventListener('activate',e=>{
     if(self.registration.navigationPreload){
       try{await self.registration.navigationPreload.enable();}catch(_){}
     }
+    await fullPrecache('activate');
     setTimeout(()=>{backgroundRescan().catch(err=>log('initial rescan err',err));},ACTIVATION_DELAY);
   })());
   self.clients.claim();
@@ -825,6 +894,12 @@ async function backgroundRescan(){
       await new Promise(r=>setTimeout(r,BATCH_DELAY));
     }
   }
+  // Keep non-page assets warm as well, so the installed PWA can open fully offline.
+  const targets=splitPrecacheTargets();
+  await Promise.all([
+    precacheTo(STATIC_CACHE,targets.staticTargets),
+    precacheTo(OTHER_CACHE,targets.otherTargets),
+  ]);
   log('backgroundRescan done');
 }
 self.addEventListener('message', (event) => {
@@ -862,8 +937,7 @@ self.addEventListener('message', (event) => {
       try {
         const names = await caches.keys();
         await Promise.all(names.map((name) => caches.delete(name)));
-        const sc = await caches.open(STATIC_CACHE);
-        await sc.addAll(CORE_ASSETS);
+        await fullPrecache('clear-cache');
         port.postMessage({ ok: true, deleted: names.length });
       } catch (e) {
         port.postMessage({ ok: false, error: String(e) });

@@ -184,7 +184,7 @@ jobs:
           until [ $attempt -gt $max_retry ]
           do
             echo "Cloudflare deploy attempt $attempt/$max_retry"
-            if npx wrangler@3 pages deploy output --project-name "$CF_PROJECT_NAME" --branch production; then
+            if npx wrangler@3 pages deploy output --project-name "$CF_PROJECT_NAME" --branch main; then
               echo "Cloudflare deployment succeeded"
               break
             fi
