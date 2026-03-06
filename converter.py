@@ -429,6 +429,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
+{self._pwa_actions_script()}
 </body>
 </html>"""
 
@@ -469,7 +470,14 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
     </div>
     <div class="setting">
       <label>应用</label>
-      <div class="chips"><button id="install-app-btn" class="chip" style="display:none;">安装应用</button></div>
+      <div class="chips" style="flex-wrap:wrap;gap:8px;">
+        <button id="btn-app-update" class="chip" type="button" style="display:none;">检查更新</button>
+        <a id="btn-download-apk" class="chip" href="#" target="_blank" rel="noopener" style="display:none;">下载 APK</a>
+        <button id="btn-install-pwa" class="chip" type="button" style="display:none;">安装 PWA</button>
+        <button id="btn-cache-info" class="chip" type="button" style="display:none;">缓存数据</button>
+        <button id="btn-clear-cache" class="chip" type="button" style="display:none;">清理缓存</button>
+      </div>
+      <div id="cache-info" style="margin-top:8px;font-size:.8rem;color:var(--c-fg-soft);white-space:pre-wrap;"></div>
     </div>
     <button id="close-settings" class="close-btn">完成</button>
   </div>
@@ -707,7 +715,6 @@ window.addEventListener('load', () => {
       {toc_html}
   </ul>
   <p class="hint">共 {total} 页 · 今日功能: {self.enable_today} · 平滑翻页启用</p>
-    {self._pwa_actions_html()}
 </main>
 {self._tts_dock_html()}
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
