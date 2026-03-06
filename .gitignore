@@ -12,4 +12,4 @@ release.keystore
 keystore.properties
 
 # Capacitor generated native platform (rebuilt by CI)
-android/
+/android/
