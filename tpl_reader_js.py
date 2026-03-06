@@ -194,10 +194,14 @@ function initControls() {
 }
 
 /* ---- TTS Dock 可见性 ---- */
+function isPageView() {
+  /* 只有 page_XXXX.htm 正文页才设置 window.PAGE_INFO */
+  return !!(window.PAGE_INFO && typeof window.PAGE_INFO.current === 'number');
+}
 function toggleTTSVisibility(show) {
   const dock = document.getElementById('tts-dock');
   if (!dock) return;
-  if (window.TTS_SUPPORTED === false) { dock.setAttribute('data-visible', 'false'); return; }
+  if (window.TTS_SUPPORTED === false || !isPageView()) { dock.setAttribute('data-visible', 'false'); return; }
   dock.setAttribute('data-visible', show ? 'true' : 'false');
 }
 
@@ -561,7 +565,8 @@ function afterSwap(url, entry) {
   updateProgress();
   installInitialPrefetch();
   reinitDynamicFeatures();
-  /* 换页后重新扫描新页面的句子，供 TTS 使用 */
+  /* 换页后重新扫描新页面的句子，并同步 TTS 栏可见性（仅正文页显示） */
+  toggleTTSVisibility(st.ttsVisible);
   if (window._ttsDock) {
     window._ttsDock.index = 0;
     window._ttsDock.collectUnits();
