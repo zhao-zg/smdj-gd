@@ -350,20 +350,26 @@ APP_UPDATE_JS = r"""
     const installer = p.ApkInstaller || p.APKInstaller || p.ApkUpdate;
     if (!installer) throw new Error('ApkInstaller plugin unavailable');
 
+    // 优先使用 content URI；Java 插件能直接识别 content:// scheme
+    const effectivePath = fileInfo.uri || fileInfo.path;
     const methods = ['install', 'installApk', 'openApk', 'openInstaller'];
+    let lastErr = null;
     for (const m of methods) {
       if (typeof installer[m] !== 'function') continue;
       try {
         await installer[m]({
-          path: fileInfo.path,
-          filePath: fileInfo.path,
+          path: effectivePath,
+          filePath: effectivePath,
           uri: fileInfo.uri,
-          apkPath: fileInfo.path,
+          apkPath: effectivePath,
         });
         return true;
-      } catch (_) {}
+      } catch (e) {
+        lastErr = e;
+        log('installer method', m, 'failed:', String(e));
+      }
     }
-    throw new Error('No supported installer method');
+    throw lastErr || new Error('No supported installer method');
   }
 
   async function checkForUpdates(silent = false) {
@@ -409,12 +415,6 @@ APP_UPDATE_JS = r"""
   window.AppUpdate = {
     checkForUpdates,
   };
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && isNative()) {
-      checkForUpdates(true).catch((e) => log('resume check fail', String(e)));
-    }
-  });
 })();
 """
 
