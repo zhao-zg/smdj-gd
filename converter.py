@@ -85,6 +85,7 @@ class EPUBToHTMLConverter:
 
         self._toc_filename_set={'nav.xhtml','toc.xhtml','navigation.xhtml','toc.html','nav.html','contents.html','content.html'}
         self._link_map={}
+        self._title_date_pat=re.compile(r"(\d{4}-\d{2}-\d{2})")
 
         # 读取应用版本（用于注入 window.APP_VERSION）
         try:
@@ -246,6 +247,23 @@ class EPUBToHTMLConverter:
             self._link_map[norm]=idx
             self._link_map[os.path.basename(norm)]=idx
 
+    def _build_title_date_page_map(self) -> Dict[str, int]:
+        """从 TOC 标题中提取 YYYY-MM-DD，并映射到对应页索引。"""
+        date_map: Dict[str, int] = {}
+        for item in self.toc_items:
+            title = item.get("title", "")
+            m = self._title_date_pat.search(title)
+            if not m:
+                continue
+            idx = self._find_spine_index(item.get("href", ""))
+            if idx is None:
+                continue
+            day = m.group(1)
+            # 同一天可能对应多个条目，优先跳到最靠前的页
+            if day not in date_map or idx < date_map[day]:
+                date_map[day] = idx
+        return date_map
+
     # ---------- 输出准备 ----------
     def _prepare_dirs(self):
         for d in (self.output_dir,self.images_dir,self.assets_css_dir,self.assets_js_dir,self.icons_dir):
@@ -371,6 +389,7 @@ class EPUBToHTMLConverter:
         page_title=self._toc_title_by_index(idx) or f"第 {idx+1} 页"
         body=self._replace_first_heading(body, page_title)
         today_btn=""
+        date_map_json = json.dumps(self._build_title_date_page_map(), ensure_ascii=False, separators=(",", ":"))
         if self.enable_today:
             today_btn=(f'<a class="nav-btn today-link" href="#" data-start-date="{self.auto_start_date_str}" '
                        f'data-start-index="{self.auto_start_page_index}" data-total="{total}">今日</a>')
@@ -418,7 +437,7 @@ class EPUBToHTMLConverter:
 {self._tts_dock_html()}
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
 <script>
-window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};window.APP_VERSION="{self.app_version}";</script>
+window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};window.PAGE_DATE_MAP={date_map_json};window.APP_VERSION="{self.app_version}";</script>
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
@@ -592,6 +611,16 @@ async function cxClearCache() {
     });
 }
 
+async function cxEnsureFullCache() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.active) return false;
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => resolve(Boolean(event.data && event.data.ok));
+        reg.active.postMessage({ type: 'ENSURE_FULL_CACHE' }, [channel.port2]);
+    });
+}
+
 function isCapacitorApp() {
     if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
         return window.Capacitor.isNativePlatform();
@@ -752,6 +781,23 @@ window.addEventListener('load', () => {
         if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}`;
         if (pctEl) pctEl.textContent = pct + '%';
         if (fillEl) fillEl.style.width = pct + '%';
+
+        // PWA 已安装场景：若未完成全量缓存，自动触发补全。
+        if (!isCapacitorApp() && isStandalonePWA() && total > 0 && cached < total) {
+            if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}，补全中…`;
+            const ok = await cxEnsureFullCache().catch(() => false);
+            if (ok) {
+                const info2 = await cxCacheInfo().catch(() => ({}));
+                if (info2.available) {
+                    const total2 = (info2.pages?.total||0) + (info2.statics?.total||0) + (info2.others?.total||0);
+                    const cached2 = (info2.pages?.cached||0) + (info2.statics?.cached||0) + (info2.others?.cached||0);
+                    const pct2 = total2 > 0 ? Math.min(100, Math.round(cached2 / total2 * 100)) : 0;
+                    if (infoBox) infoBox.textContent = `版本 ${info2.version||'-'}  缓存 ${cached2}/${total2}`;
+                    if (pctEl) pctEl.textContent = pct2 + '%';
+                    if (fillEl) fillEl.style.width = pct2 + '%';
+                }
+            }
+        }
     }, 1200);
 });
 window.addEventListener('load', () => {
@@ -792,6 +838,7 @@ window.addEventListener('load', () => {
                 items.append(f'<li><a href="page_{i:04d}.htm">第 {i+1} 页</a></li>')
         toc_html="\n      ".join(items)
         total=len(self.spine_items)
+        date_map_json = json.dumps(self._build_title_date_page_map(), ensure_ascii=False, separators=(",", ":"))
         today_btn=""
         if self.enable_today:
             today_btn=(f'<a class="nav-btn today-link" href="#" data-start-date="{self.auto_start_date_str}" '
@@ -836,6 +883,7 @@ window.addEventListener('load', () => {
 <button id="back-top" class="fab-top" aria-label="回到顶部">↑</button>
 <script>
 window.PAGE_INFO={{current:-1,total:{total},prevPage:null,nextPage:null}};
+window.PAGE_DATE_MAP={date_map_json};
 window.APP_VERSION="{self.app_version}";
 </script>
 <script src="assets/js/tts.js" defer></script>
@@ -972,13 +1020,16 @@ window.APP_VERSION="{self.app_version}";
 
         cfg_path = Path(__file__).parent / "app_config.json"
         try:
-            _app_ver = json.loads(cfg_path.read_text(encoding="utf-8")).get("version", "1.0.0")
+            _cfg_obj = json.loads(cfg_path.read_text(encoding="utf-8"))
+            _app_ver = _cfg_obj.get("version", "1.0.0")
+            _app_name = _cfg_obj.get("app_name", "共读")
         except Exception:
             _app_ver = "1.0.0"
+            _app_name = "共读"
         version_info = {
             "version": _app_ver,
             "apk_version": _app_ver,
-            "apk_file": f"{self.epub_path.stem}-v{_app_ver}.apk",
+            "apk_file": f"{_app_name}-v{_app_ver}.apk",
         }
         self.output_dir.joinpath("version.json").write_text(
             json.dumps(version_info, ensure_ascii=False, indent=2),

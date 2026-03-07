@@ -82,6 +82,7 @@ const RESCAN_INTERVAL = 1000 * 60 * 60;
 const ACTIVATION_DELAY = 3000;
 const BATCH_SIZE = 5;
 const BATCH_DELAY = 1000;
+let __fullPrecachePromise = null;
 
 function log(...a){ if(DEBUG) console.log('[SW]',...a); }
 function isHTMLResponse(res){
@@ -165,6 +166,32 @@ async function fullPrecache(reason){
   ]);
   log('fullPrecache',reason,{page:pc,stat:sc,other:oc});
 }
+async function runFullPrecacheOnce(reason){
+  if(__fullPrecachePromise) return __fullPrecachePromise;
+  __fullPrecachePromise=(async()=>{
+    try{ await fullPrecache(reason); }
+    finally{ __fullPrecachePromise=null; }
+  })();
+  return __fullPrecachePromise;
+}
+async function corePrecache(reason){
+  const corePaths = uniqueList(CORE_ASSETS.map(normalizeAssetPath)).filter(p=>p && classifyAsset(p)!=='skip');
+  const pageTargets=[];
+  const staticTargets=[];
+  const otherTargets=[];
+  for(const p of corePaths){
+    const cls=classifyAsset(p);
+    if(cls==='page') pageTargets.push(p);
+    else if(cls==='static') staticTargets.push(p);
+    else otherTargets.push(p);
+  }
+  const [pc,sc,oc]=await Promise.all([
+    precacheTo(PAGE_CACHE,pageTargets),
+    precacheTo(STATIC_CACHE,staticTargets),
+    precacheTo(OTHER_CACHE,otherTargets),
+  ]);
+  log('corePrecache',reason,{page:pc,stat:sc,other:oc});
+}
 function normalizePagePath(pathname){
   pathname=pathname.replace(/\/index\.html?$/,'/');
   if(/\/page_\d{4}\.htm$/.test(pathname)) return pathname;
@@ -228,7 +255,7 @@ async function cacheFirstRevalidate(req,cacheName){
 }
 self.addEventListener('install',e=>{
   e.waitUntil((async()=>{
-    await fullPrecache('install');
+    await corePrecache('install-core-only');
   })());
   self.skipWaiting();
 });
@@ -239,8 +266,7 @@ self.addEventListener('activate',e=>{
     if(self.registration.navigationPreload){
       try{await self.registration.navigationPreload.enable();}catch(_){}
     }
-    await fullPrecache('activate');
-    setTimeout(()=>{backgroundRescan().catch(err=>log('initial rescan err',err));},ACTIVATION_DELAY);
+    // install 阶段已完成 fullPrecache，这里不再重复跑，避免双倍预缓存流量。
   })());
   self.clients.claim();
 });
@@ -357,8 +383,20 @@ self.addEventListener('message', (event) => {
       try {
         const names = await caches.keys();
         await Promise.all(names.map((name) => caches.delete(name)));
-        await fullPrecache('clear-cache');
+        await runFullPrecacheOnce('clear-cache');
         port.postMessage({ ok: true, deleted: names.length });
+      } catch (e) {
+        port.postMessage({ ok: false, error: String(e) });
+      }
+    })());
+    return;
+  }
+
+  if (data.type === 'ENSURE_FULL_CACHE') {
+    event.waitUntil((async () => {
+      try {
+        await runFullPrecacheOnce('ensure-full-cache');
+        port.postMessage({ ok: true });
       } catch (e) {
         port.postMessage({ ok: false, error: String(e) });
       }

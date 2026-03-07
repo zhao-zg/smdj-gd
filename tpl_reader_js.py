@@ -23,6 +23,62 @@ let lastScrollY = 0, hideTimer = null, installPromptEvt = null,
 const pageCache = new Map();
 const historyStackLimit = parseInt(localStorage.getItem('historyCacheSize') || '50', 10);
 let currentURL = location.href;
+const LAST_PAGE_KEY = 'reader.lastPage.v1';
+const SESSION_SEEN_KEY = 'reader.session.seen.v1';
+
+function getCurrentPageFile() {
+  const cur = window.PAGE_INFO?.current;
+  if (typeof cur !== 'number' || cur < 0) return null;
+  return 'page_' + String(cur).padStart(4, '0') + '.htm';
+}
+
+function saveLastReadPage(explicitHref) {
+  try {
+    const href = explicitHref || getCurrentPageFile();
+    if (!href) return;
+    localStorage.setItem(LAST_PAGE_KEY, href);
+  } catch (_) {}
+}
+
+function bindLastReadPagePersistence() {
+  const persist = () => saveLastReadPage();
+  window.addEventListener('pagehide', persist);
+  window.addEventListener('beforeunload', persist);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persist();
+  });
+}
+
+function markSessionSeenAndCheckFirst() {
+  try {
+    const seen = sessionStorage.getItem(SESSION_SEEN_KEY) === '1';
+    if (!seen) sessionStorage.setItem(SESSION_SEEN_KEY, '1');
+    return !seen;
+  } catch (_) {
+    return true;
+  }
+}
+
+function resumeLastReadPageIfNeeded(firstInSession) {
+  const p = location.pathname;
+  const isIndex = p === '/' || p.endsWith('/index.html') || p.endsWith('/index.htm');
+  if (!isIndex) return false;
+
+  // 同一会话中，从正文页点“目录”会带 from 参数，此时不自动跳回，避免打断看目录。
+  const qs = new URLSearchParams(location.search);
+  if (!firstInSession && qs.has('from')) return false;
+
+  try {
+    const last = localStorage.getItem(LAST_PAGE_KEY);
+    if (!last || !/^page_\d{4}\.htm$/.test(last)) return false;
+    const currentFile = (p.split('/').pop() || '').toLowerCase();
+    if (currentFile === last.toLowerCase()) return false;
+    location.replace(last);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 /* ---- 调试日志 ---- */
 function logNav(...a)   { if (localStorage.getItem('navDebug')   === '1') console.log('[NAV]',   ...a); }
@@ -274,13 +330,54 @@ function systemThemeWatcher() {
 
 /* ---- "今天读到"链接 ---- */
 function initTodayLinks() {
+  function toLocalDateText(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function pickByTitleDate(mapObj, todayText) {
+    const keys = Object.keys(mapObj || {}).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
+    if (!keys.length) return null;
+    if (Number.isFinite(Number(mapObj[todayText]))) {
+      return Number(mapObj[todayText]);
+    }
+    // 若当天无匹配，回退到不晚于今天的最近日期
+    let picked = null;
+    for (const k of keys) {
+      if (k <= todayText) picked = k;
+      else break;
+    }
+    if (picked && Number.isFinite(Number(mapObj[picked]))) {
+      return Number(mapObj[picked]);
+    }
+    return null;
+  }
+
   document.querySelectorAll('.today-link').forEach(link => {
     link.addEventListener('click', e => {
       e.preventDefault();
       const startDate  = link.dataset.startDate;
       const startIndex = parseInt(link.dataset.startIndex || '0', 10);
       const total      = parseInt(link.dataset.total || '0', 10);
-      if (!startDate || total <= 0) return;
+      if (total <= 0) return;
+
+      const todayText = toLocalDateText(new Date());
+      const titleDateTarget = pickByTitleDate(window.PAGE_DATE_MAP || {}, todayText);
+      if (Number.isInteger(titleDateTarget)) {
+        let target = titleDateTarget;
+        if (target < 0) target = 0;
+        if (target > total - 1) target = total - 1;
+        const url = 'page_' + String(target).padStart(4, '0') + '.htm';
+        customNavigate(url, target > (window.PAGE_INFO?.current || 0) ? 'next' : 'prev');
+        return;
+      }
+
+      if (!startDate) {
+        alert('未找到标题日期映射，且未配置起始日期');
+        return;
+      }
       const parts = startDate.split('-').map(Number);
       if (parts.length !== 3) { alert('起始日期配置错误'); return; }
       const sDate = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -533,6 +630,7 @@ function doPageSwap(url, entry, dir) {
     nextPage: entry.pageInfo.nextPage,
   };
   updateNavBarByPageInfo(window.PAGE_INFO);
+  saveLastReadPage();
   if (url !== currentURL) { history.pushState({ url }, '', url); currentURL = url; }
   afterSwap(url, entry);
 }
@@ -599,7 +697,10 @@ function initAndroidBack() {
 
 /* ---- 入口 ---- */
 document.addEventListener('DOMContentLoaded', () => {
+  const firstInSession = markSessionSeenAndCheckFirst();
+  if (resumeLastReadPageIfNeeded(firstInSession)) return;
   initSWDisableCheck();
+  bindLastReadPagePersistence();
   loadSettings();
   applySettings();
   initControls();
@@ -613,6 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSwipe();
   installInitialPrefetch();
   updateNavBarByPageInfo(window.PAGE_INFO);
+  saveLastReadPage();
   initAndroidBack();
 });
 
