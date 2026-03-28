@@ -403,7 +403,7 @@ function initSwipe() {
   const baseX      = Math.round(window.innerWidth * 0.14);
   const THRESHOLD_X = parseInt(localStorage.getItem('swipeThresholdX') || String(Math.max(42, Math.min(88, baseX))), 10);
   const THRESHOLD_Y = parseInt(localStorage.getItem('swipeThresholdY') || '72', 10);
-  const ANGLE_RATIO = parseFloat(localStorage.getItem('swipeAngleRatio') || '1.35');
+  const ANGLE_RATIO = parseFloat(localStorage.getItem('swipeAngleRatio') || '2.0');
   const MAX_TIME    = 850;
   const MIN_VELOCITY = parseFloat(localStorage.getItem('swipeMinVelocityPxMs') || '0.30');
 
