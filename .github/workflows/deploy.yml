@@ -1,7 +1,5 @@
 name: Deploy Static Site
 
-retention-days: 1
-
 on:
   push:
     branches:
