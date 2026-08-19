@@ -1,7 +1,5 @@
 name: Android Release APK
 
-retention-days: 1
-
 on:
   push:
     tags:
