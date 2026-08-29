@@ -530,31 +530,51 @@ function updateNavBarByPageInfo(pageInfo) {
   }
 }
 
+/* ---- 页面文本获取：网络优先，失败回退 Cache Storage（离线/域名失效仍可翻页） ---- */
+function fetchPageTextFromCache(url) {
+  if (!('caches' in window)) return Promise.reject(new Error('no caches'));
+  return caches.match(url).then(res => {
+    if (res && res.ok) return res.text();
+    throw new Error('cache miss');
+  });
+}
+
+function loadPageText(url) {
+  return fetch(url, { credentials: 'same-origin' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .catch(err => {
+      logNav('net fail, fallback cache', err && err.message);
+      return fetchPageTextFromCache(url);
+    });
+}
+
+function parsePageEntry(html) {
+  const doc     = new DOMParser().parseFromString(html, 'text/html');
+  const content = doc.querySelector('#reader-content');
+  let pageInfo  = null;
+  for (const s of doc.querySelectorAll('script')) {
+    const txt = s.textContent || '';
+    if (txt.includes('window.PAGE_INFO')) {
+      try {
+        const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+?\})\s*;/s);
+        if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
+      } catch (_) {}
+    }
+  }
+  if (content && pageInfo) return { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo };
+  return null;
+}
+
 /* ---- 预取相邻页面 ---- */
 function prefetchLink(url) {
   if (!url) return;
   if (localStorage.getItem('prefetchDisable') === '1') return;
   if (pageCache.has(url)) return;
   logNav('prefetch', url);
-  fetch(url, { credentials: 'same-origin' })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  loadPageText(url)
     .then(html => {
-      const doc     = new DOMParser().parseFromString(html, 'text/html');
-      const content = doc.querySelector('#reader-content');
-      let pageInfo  = null;
-      for (const s of doc.querySelectorAll('script')) {
-        const txt = s.textContent || '';
-        if (txt.includes('window.PAGE_INFO')) {
-          try {
-            const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);
-            if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
-          } catch (_) {}
-        }
-      }
-      if (content && pageInfo) {
-        pageCache.set(url, { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo });
-        trimCache();
-      }
+      const entry = parsePageEntry(html);
+      if (entry) { pageCache.set(url, entry); trimCache(); }
     })
     .catch(() => {});
 }
@@ -581,23 +601,10 @@ function customNavigate(url, dir) {
 function smoothTransitionTo(url, dir = 'next', allowFetch = true) {
   if (pageCache.has(url)) { doPageSwap(url, pageCache.get(url), dir); return; }
   if (!allowFetch) { location.href = url; return; }
-  fetch(url, { credentials: 'same-origin' })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  loadPageText(url)
     .then(html => {
-      const doc     = new DOMParser().parseFromString(html, 'text/html');
-      const content = doc.querySelector('#reader-content');
-      let pageInfo  = null;
-      for (const s of doc.querySelectorAll('script')) {
-        const txt = s.textContent || '';
-        if (txt.includes('window.PAGE_INFO')) {
-          try {
-            const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);
-            if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
-          } catch (_) {}
-        }
-      }
-      if (content && pageInfo) {
-        const entry = { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo };
+      const entry = parsePageEntry(html);
+      if (entry) {
         pageCache.set(url, entry); trimCache();
         doPageSwap(url, entry, dir);
       } else {
@@ -643,6 +650,10 @@ function afterSwap(url, entry) {
   updateProgress();
   installInitialPrefetch();
   reinitDynamicFeatures();
+  /* 换页后重新应用当前页划线/标记/批注（换页 innerHTML 重建了 DOM） */
+  if (window.SMHighlights && typeof window.SMHighlights.refresh === 'function') {
+    window.SMHighlights.refresh();
+  }
   /* 换页后重新扫描新页面的句子，并同步 TTS 栏可见性（仅正文页显示） */
   toggleTTSVisibility(st.ttsVisible);
   if (window._ttsDock) {

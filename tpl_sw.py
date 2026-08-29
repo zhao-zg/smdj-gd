@@ -25,7 +25,7 @@ SW_REGISTER_JS = r"""
       if(ct.includes('text/html')) throw new Error('html fallback');
       return true;
     }catch(e){
-      console.warn('[SW] probe fail',url,e.message);return false;
+      console.warn('[sm] probe fail',url,e.message);return false;
     }
   }
 
@@ -35,13 +35,13 @@ SW_REGISTER_JS = r"""
       if(!ok) continue;
       try{
         const reg = await navigator.serviceWorker.register(p);
-        console.log('[SW] registered',p,'scope:',reg.scope);
+        console.log('[sm] registered',p,'scope:',reg.scope);
         return;
       }catch(e){
-        console.warn('[SW] register fail',p,e);
+        console.warn('[sm] register fail',p,e);
       }
     }
-    console.warn('[SW] all candidates failed');
+    console.warn('[sm] all candidates failed');
   }
 
   function start(){ if('requestIdleCallback' in window) requestIdleCallback(tryRegister); else setTimeout(tryRegister,200); }
@@ -49,19 +49,37 @@ SW_REGISTER_JS = r"""
 })();
 """
 
-# ================== Service Worker 模板 (延迟后台刷新) ==================
+# ================== Service Worker 模板 (核心预缓存 + 页面管理数据桶) ==================
+# 对齐 books/sg 模式：
+#   - CACHE_NAME 固定 'sm-main'，不注入版本号（SW 运行时缓存，cache.put 覆盖更新）
+#   - 全量数据缓存由页面 pwaCache 管理（sm-data-{version} 切换桶方案），SW 不参与
+#   - SW activate 零清理：不删除任何缓存（含旧版数据桶），只做 clients.claim()
+#   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 弹进度条全量缓存
+#   - 更新：页面检查 version.json 版本变化 → 切换数据桶重新缓存
 
 SERVICE_WORKER_JS_NEW = r"""
-/* Service Worker – full-site precache after install */
-const VERSION = /*__SW_VERSION__*/;
+/* ============================================================
+ * Service Worker – 共读 阅读器
+ * 缓存策略（对齐 books/sg 模式，v7.3.0 重构）：
+ *   - CACHE_NAME 固定 'sm-main'：SW 运行时缓存（核心预缓存 + 运行时 cache.put 覆盖）
+ *   - 全量数据缓存由页面 pwaCache 管理：sm-data-{version} 切换桶方案，SW 不参与生命周期
+ *   - SW activate 零清理：不删除任何缓存（含旧版数据桶），只做 clients.claim()
+ *   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 弹进度条全量缓存
+ *   - 更新检查：页面读 version.json，版本变化时切换数据桶重新缓存
+ * ============================================================ */
+const CACHE_NAME = 'sm-main';
+const DATA_CACHE_PREFIX = 'sm-data-';
 const DEBUG   = false;
+const SW_VERSION = /*__SW_VERSION__*/;
 
-const STATIC_CACHE = 'static-' + VERSION;
-const PAGE_CACHE   = 'pages-'  + VERSION;
-const OTHER_CACHE  = 'other-'  + VERSION;
+const NAV_TIMEOUT = 15000;
 
+// 安装时预缓存的核心资源（仅首屏必需：阻塞启动脚本 + 首屏 CSS + 图标 + 清单）
+// 全量资源（页面清单 __SM_CACHE_URLS）由页面 pwaCache 安装/更新时全量缓存。
+// 该列表须是 __SM_CACHE_URLS 的子集（构建生成清单时校验）。
 const CORE_ASSETS = [
   './',
+  './index.html',
   './offline.htm',
   './manifest.json',
   './manifest.webmanifest',
@@ -69,22 +87,17 @@ const CORE_ASSETS = [
   './assets/css/themes.css',
   './assets/css/extra.css',
   './assets/js/reader.js',
+  './assets/js/highlight.js',
   './assets/js/tts.js',
-  './assets/js/app-update.js',
-  './assets/js/sw-register.js'
+  './assets/js/sw-register.js',
+  './assets/js/cache-manifest.js',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/pwa-icon-192.png',
+  './icons/pwa-icon-512.png'
 ];
 
-const PAGE_LIST = /*__PAGE_DIRS__*/;
-const ALL_ASSETS = /*__ALL_ASSETS__*/;
-
-const NAV_TIMEOUT     = 15000;
-const RESCAN_INTERVAL = 1000 * 60 * 60;
-const ACTIVATION_DELAY = 3000;
-const BATCH_SIZE = 5;
-const BATCH_DELAY = 1000;
-let __fullPrecachePromise = null;
-
-function log(...a){ if(DEBUG) console.log('[SW]',...a); }
+function log(...a){ if(DEBUG) console.log('[sm]',...a); }
 function isHTMLResponse(res){
   if(!res)return false;
   const ct=(res.headers.get('content-type')||'').toLowerCase();
@@ -103,21 +116,20 @@ function normalizeAssetPath(path){
   if(norm === './index.html') return './';
   return norm;
 }
-function classifyAsset(path){
-  const p=normalizeAssetPath(path).toLowerCase();
-  if(!p) return 'static';
-  if(p==='./') return 'page';
-  if(p.endsWith('.apk')) return 'skip';
-  if(/\/(?:page_\d{4}\.htm)$/.test(p) || /^\.\/page_\d{4}\.htm$/.test(p)) return 'page';
-  if(p.endsWith('/index.html') || p === './index.html' || p === './' || p.endsWith('.htm')) return 'page';
-  if(/\.(css|js|woff2?|ttf|otf|json|webmanifest|map)$/i.test(p)) return 'static';
-  if(/\.(png|jpe?g|gif|webp|svg|avif|ico)$/i.test(p)) return 'other';
-  return 'other';
+// URL 规范化：/index.html → / 目录补全斜杠（用于导航匹配缓存 key）
+function normalizeUrlPathname(pathname){
+  try{
+    let p = decodeURIComponent(pathname);
+    if(p.endsWith('/index.html')) p = p.slice(0, -10);
+    if(/\/page_\d{4}\.htm$/.test(p)) return p;
+    if(!p.split('/').pop().includes('.') && !p.endsWith('/')) p += '/';
+    return p;
+  }catch(e){ return pathname; }
 }
 async function precacheTo(cacheName, assets){
   const cache=await caches.open(cacheName);
   let okCount=0;
-  const normalized=uniqueList(assets.map(normalizeAssetPath)).filter(a=>a && classifyAsset(a)!=='skip');
+  const normalized=uniqueList(assets.map(normalizeAssetPath));
   const BATCH=8;
   for(let i=0;i<normalized.length;i+=BATCH){
     const batch=normalized.slice(i,i+BATCH);
@@ -134,100 +146,47 @@ async function precacheTo(cacheName, assets){
   }
   return okCount;
 }
-function splitPrecacheTargets(){
-  const pageTargets=[];
-  const staticTargets=[];
-  const otherTargets=[];
 
-  const pageCandidates=['./', './offline.htm', ...PAGE_LIST.map(p=>'./'+p)];
-  const allCandidates=[...CORE_ASSETS,...ALL_ASSETS];
+// ---- 生命周期 ----
+self.addEventListener('install', e=>{
+  e.waitUntil((async()=>{
+    // 核心预缓存失败不阻塞安装（部分资源缺失时运行时缓存兜底）
+    try{ await precacheTo(CACHE_NAME, CORE_ASSETS); }
+    catch(_){}
+    // 快速激活：缓存版本管理由页面 pwaCache 切换桶方案控制，SW 不参与
+    self.skipWaiting();
+  })());
+});
+self.addEventListener('activate', e=>{
+  e.waitUntil((async()=>{
+    // SW 只管缓存读写，不负责版本管理。
+    // 旧缓存切换由页面 pwaCache 的"先建后删"流程控制，activate 零清理，
+    // 避免升级中途退出导致离线失效。
+    // 不启用 navigationPreload：离线时 event.preloadResponse 可能挂起导致导航失败。
+    try{ await self.clients.claim(); }catch(_){}
+  })());
+});
 
-  for(const path of uniqueList([...pageCandidates,...allCandidates])){
-    const cls=classifyAsset(path);
-    const normalized=normalizeAssetPath(path);
-    if(!normalized || cls==='skip') continue;
-    if(cls==='page') pageTargets.push(normalized);
-    else if(cls==='static') staticTargets.push(normalized);
-    else otherTargets.push(normalized);
-  }
-
-  return {
-    pageTargets: uniqueList(pageTargets),
-    staticTargets: uniqueList(staticTargets),
-    otherTargets: uniqueList(otherTargets),
-  };
-}
-async function fullPrecache(reason){
-  const targets=splitPrecacheTargets();
-  const [pc,sc,oc]=await Promise.all([
-    precacheTo(PAGE_CACHE,targets.pageTargets),
-    precacheTo(STATIC_CACHE,targets.staticTargets),
-    precacheTo(OTHER_CACHE,targets.otherTargets),
-  ]);
-  log('fullPrecache',reason,{page:pc,stat:sc,other:oc});
-}
-async function runFullPrecacheOnce(reason){
-  if(__fullPrecachePromise) return __fullPrecachePromise;
-  __fullPrecachePromise=(async()=>{
-    try{ await fullPrecache(reason); }
-    finally{ __fullPrecachePromise=null; }
-  })();
-  return __fullPrecachePromise;
-}
-async function corePrecache(reason){
-  const corePaths = uniqueList(CORE_ASSETS.map(normalizeAssetPath)).filter(p=>p && classifyAsset(p)!=='skip');
-  const pageTargets=[];
-  const staticTargets=[];
-  const otherTargets=[];
-  for(const p of corePaths){
-    const cls=classifyAsset(p);
-    if(cls==='page') pageTargets.push(p);
-    else if(cls==='static') staticTargets.push(p);
-    else otherTargets.push(p);
-  }
-  const [pc,sc,oc]=await Promise.all([
-    precacheTo(PAGE_CACHE,pageTargets),
-    precacheTo(STATIC_CACHE,staticTargets),
-    precacheTo(OTHER_CACHE,otherTargets),
-  ]);
-  log('corePrecache',reason,{page:pc,stat:sc,other:oc});
-}
-function normalizePagePath(pathname){
-  pathname=pathname.replace(/\/index\.html?$/,'/');
-  if(/\/page_\d{4}\.htm$/.test(pathname)) return pathname;
-  if(/\/page_\d{4}$/.test(pathname)) pathname+='/';
-  return pathname;
-}
-async function putPageCache(key,res){
-  if(res && res.ok && isHTMLResponse(res)){
-    const cache=await caches.open(PAGE_CACHE);
-    const req=(typeof key==='string')?new Request(key):key;
-    cache.put(req,res.clone());
-  }
-}
+// ---- 请求拦截 ----
 async function handleNavigation(event){
   const request=event.request;
   const url=new URL(request.url);
-  const normalizedPath=normalizePagePath(url.pathname);
-  const normalizedURL=url.origin+normalizedPath;
-  try{
-    const preload=await event.preloadResponse;
-    if(preload && preload.ok){
-      putPageCache(normalizedURL,preload).catch(()=>{});
-      return preload;
-    }
-  }catch(_){}
-  const pageCache=await caches.open(PAGE_CACHE);
-  const cached=await pageCache.match(normalizedURL) || await pageCache.match(request);
+  const normalizedURL=url.origin + normalizeUrlPathname(url.pathname);
+  // 不使用 navigationPreload：离线时 event.preloadResponse 可能挂起导致导航超时。
+  // 全局缓存搜索：可命中页面数据桶（sm-data-{version}）或核心桶（sm-main）
+  const cached=await caches.match(request) || await caches.match(normalizedURL) || await caches.match('./');
   if(cached){
-    log('nav cache hit',normalizedPath);
+    log('nav cache hit',normalizedURL);
     return cached;
   }
   try{
     const netReq=new Request(normalizedURL,{credentials:request.credentials});
     const res=await networkFetchWithTimeout(netReq);
     if(res && res.ok){
-      await putPageCache(normalizedURL,res);
+      try{
+        const cache=await caches.open(CACHE_NAME);
+        await cache.put(normalizedURL,res.clone());
+      }catch(_){}
       return res;
     }
   }catch(e){
@@ -237,11 +196,11 @@ async function handleNavigation(event){
          (await caches.match('./offline.htm')) ||
          new Response('<h1>Offline</h1>',{status:503,headers:{'Content-Type':'text/html'}});
 }
-async function cacheFirstRevalidate(req,cacheName){
-  const cache=await caches.open(cacheName);
-  /* 统一用绝对 URL 字符串查询，与 precacheTo 存储方式一致 */
+async function cacheFirstThenRevalidate(req){
+  const cache=await caches.open(CACHE_NAME);
+  /* 全局搜索（含数据桶），与 precacheTo/cache.put 的绝对 URL key 一致 */
   const absUrl=new URL(req.url,self.location.href).href;
-  const cached=await cache.match(absUrl);
+  const cached=await caches.match(req) || await caches.match(absUrl);
   const fetchPromise=fetch(req).then(r=>{
     if(r && r.ok) cache.put(absUrl,r.clone());
     return r;
@@ -253,123 +212,64 @@ async function cacheFirstRevalidate(req,cacheName){
   const net=await fetchPromise;
   return net || new Response('/* unavailable */',{status:503});
 }
-self.addEventListener('install',e=>{
-  e.waitUntil((async()=>{
-    await corePrecache('install-core-only');
-  })());
-  self.skipWaiting();
-});
-self.addEventListener('activate',e=>{
-  e.waitUntil((async()=>{
-    const keys=await caches.keys();
-    await Promise.all(keys.filter(k=>![STATIC_CACHE,PAGE_CACHE,OTHER_CACHE].includes(k)).map(k=>caches.delete(k)));
-    if(self.registration.navigationPreload){
-      try{await self.registration.navigationPreload.enable();}catch(_){}
+async function networkFirst(req){
+  try{
+    const r=await fetch(req);
+    if(r && r.ok){
+      const cache=await caches.open(CACHE_NAME);
+      cache.put(req,r.clone()).catch(()=>{});
     }
-    // install 阶段已完成 fullPrecache，这里不再重复跑，避免双倍预缓存流量。
-  })());
-  self.clients.claim();
-});
+    return r;
+  }catch(_){
+    const hit=await caches.match(req);
+    return hit||new Response('/* offline */',{status:503});
+  }
+}
 self.addEventListener('fetch',e=>{
   const req=e.request;
-  const url=new URL(req.url);
+  if(req.method!=='GET') return;
+  let url;
+  try{ url=new URL(req.url); }catch(_){ return; }
   if(url.origin!==location.origin) return;
+  // 页面侧 pwaCache 安装/更新使用 cache:'no-cache' 发起请求并显式 cache.put，
+  // SW 不再介入，避免双重写缓存竞争。
+  // 但导航请求即使是 no-cache 也必须拦截（离线刷新时导航请求 cache 属性为 no-cache）
+  if(req.cache==='no-cache' && req.mode!=='navigate') return;
   if(req.mode==='navigate'){
     e.respondWith(handleNavigation(e));
     return;
   }
-  if(req.method!=='GET') return;
   if(/\.(css|js|woff2?|ttf|otf)$/.test(url.pathname)){
-    e.respondWith(cacheFirstRevalidate(req,STATIC_CACHE));return;
+    e.respondWith(cacheFirstThenRevalidate(req));return;
   }
-  if(/\.(png|jpe?g|gif|webp|svg|avif)$/.test(url.pathname)){
-    e.respondWith(cacheFirstRevalidate(req,OTHER_CACHE));return;
+  if(/\.(png|jpe?g|gif|webp|svg|avif|ico)$/.test(url.pathname)){
+    e.respondWith(cacheFirstThenRevalidate(req));return;
   }
-  e.respondWith((async()=>{
-    try{
-      const r=await fetch(req);
-      if(r && r.ok){
-        const oc=await caches.open(OTHER_CACHE);
-        oc.put(req,r.clone());
-      }
-      return r;
-    }catch(_){
-      const oc=await caches.open(OTHER_CACHE);
-      const hit=await oc.match(req);
-      return hit||new Response('/* offline */',{status:503});
-    }
-  })());
+  e.respondWith(networkFirst(req));
 });
-async function backgroundRescan(){
-  log('backgroundRescan start', PAGE_LIST.length);
-  const pc=await caches.open(PAGE_CACHE);
-  for(let i=0;i<PAGE_LIST.length;i+=BATCH_SIZE){
-    const slice=PAGE_LIST.slice(i,i+BATCH_SIZE);
-    await Promise.all(slice.map(async p=>{
-      const url='./'+p;
-      try{
-        const r=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(10000)});
-        if(r.ok && isHTMLResponse(r)){
-          pc.put(url,r.clone());
-          log('refreshed',url);
-        }
-      }catch(_){}
-    }));
-    if(i+BATCH_SIZE<PAGE_LIST.length){
-      await new Promise(r=>setTimeout(r,BATCH_DELAY));
-    }
-  }
-  // Keep non-page assets warm as well, so the installed PWA can open fully offline.
-  const targets=splitPrecacheTargets();
-  await Promise.all([
-    precacheTo(STATIC_CACHE,targets.staticTargets),
-    precacheTo(OTHER_CACHE,targets.otherTargets),
-  ]);
-  log('backgroundRescan done');
-}
+// ---- 消息接口 ----
 self.addEventListener('message', (event) => {
   const data = event.data || {};
+  if (!data.type) return;
+
+  if (data.type === 'SKIP_WAITING') { self.skipWaiting(); return; }
+
   const port = event.ports && event.ports[0];
-  if (!port || !data.type) return;
 
   if (data.type === 'CACHE_INFO') {
+    if (!port) return;
     event.waitUntil((async () => {
       try {
-        const [pageCache, staticCache, otherCache] = await Promise.all([
-          caches.open(PAGE_CACHE),
-          caches.open(STATIC_CACHE),
-          caches.open(OTHER_CACHE),
-        ]);
-        const [pageKeys, staticKeys, otherKeys] = await Promise.all([
-          pageCache.keys(),
-          staticCache.keys(),
-          otherCache.keys(),
-        ]);
-        const targets = splitPrecacheTargets();
-        // 统计期望列表里实际已缓存的数量（而非 cache 桶的总条目数）
-        const [matchedPages, matchedStatics, matchedOthers] = await Promise.all([
-          Promise.all(targets.pageTargets.map(p => {
-            const abs=new URL(p,self.location.href).href;
-            return pageCache.match(abs);
-          })).then(rs => rs.filter(Boolean).length),
-          Promise.all(targets.staticTargets.map(p => {
-            const abs=new URL(p,self.location.href).href;
-            return staticCache.match(abs);
-          })).then(rs => rs.filter(Boolean).length),
-          Promise.all(targets.otherTargets.map(p => {
-            const abs=new URL(p,self.location.href).href;
-            return otherCache.match(abs);
-          })).then(rs => rs.filter(Boolean).length),
-        ]);
+        const keys = await caches.keys();
+        const dataBuckets = keys.filter(k => k.indexOf(DATA_CACHE_PREFIX) === 0);
         port.postMessage({
           ok: true,
           available: true,
-          version: VERSION,
-          cacheCount: 3,
-          entryCount: pageKeys.length + staticKeys.length + otherKeys.length,
-          pages:   { cached: matchedPages,   total: targets.pageTargets.length },
-          statics: { cached: matchedStatics, total: targets.staticTargets.length },
-          others:  { cached: matchedOthers,  total: targets.otherTargets.length },
+          cacheName: CACHE_NAME,
+          version: SW_VERSION,
+          dataBuckets: dataBuckets,
+          bucketCount: dataBuckets.length,
+          cacheCount: keys.length
         });
       } catch (e) {
         port.postMessage({ ok: false, available: true, error: String(e) });
@@ -379,11 +279,14 @@ self.addEventListener('message', (event) => {
   }
 
   if (data.type === 'CLEAR_CACHE') {
+    if (!port) return;
     event.waitUntil((async () => {
       try {
         const names = await caches.keys();
-        await Promise.all(names.map((name) => caches.delete(name)));
-        await runFullPrecacheOnce('clear-cache');
+        await Promise.all(
+          names.filter(n => n === CACHE_NAME || n.indexOf(DATA_CACHE_PREFIX) === 0)
+               .map(n => caches.delete(n))
+        );
         port.postMessage({ ok: true, deleted: names.length });
       } catch (e) {
         port.postMessage({ ok: false, error: String(e) });
@@ -391,19 +294,7 @@ self.addEventListener('message', (event) => {
     })());
     return;
   }
-
-  if (data.type === 'ENSURE_FULL_CACHE') {
-    event.waitUntil((async () => {
-      try {
-        await runFullPrecacheOnce('ensure-full-cache');
-        port.postMessage({ ok: true });
-      } catch (e) {
-        port.postMessage({ ok: false, error: String(e) });
-      }
-    })());
-  }
 });
-setInterval(()=>backgroundRescan().catch(e=>log('periodic rescan err',e)),RESCAN_INTERVAL);
 """
 
 OFFLINE_HTML = r"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport"content="width=device-width,initial-scale=1"/><title>离线模式</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;margin:0;padding:40px 24px;background:#f2f5f8;color:#333;display:flex;flex-direction:column;align-items:center;text-align:center}h1{margin:0 0 16px;font-size:1.6rem}p{line-height:1.55;margin:0 0 10px}.card{background:#fff;padding:32px 30px;max-width:460px;border-radius:18px;box-shadow:0 8px 30px -10px rgba(0,0,0,.15)}a.btn{display:inline-block;background:#3366ff;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:600;letter-spacing:.5px;margin-top:18px;box-shadow:0 4px 18px -6px rgba(51,102,255,.5)}a.btn:hover{filter:brightness(1.05)}</style></head><body><div class="card"><h1>离线不可用</h1><p>该页面尚未缓存或当前网络不可用。</p><a class="btn" href="./index.html">返回目录</a></div></body></html>"""

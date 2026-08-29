@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from templates import (
     CORE_CSS_FULL, CORE_CSS_LIGHT, THEMES_CSS, FONTS_CSS_TEMPLATE,
     READER_JS, TTS_JS, APP_UPDATE_JS, SW_REGISTER_JS, SERVICE_WORKER_JS_NEW, OFFLINE_HTML,
+    HIGHLIGHT_JS,
 )
 from icon_generator import (
     generate_icon, _safe_b64_decode, BASE64_ICON_192, BASE64_ICON_512,
@@ -282,6 +283,7 @@ class EPUBToHTMLConverter:
         self.assets_js_dir.joinpath("tts.js").write_text(TTS_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("app-update.js").write_text(APP_UPDATE_JS,encoding="utf-8")
         self.assets_js_dir.joinpath("sw-register.js").write_text(SW_REGISTER_JS,encoding="utf-8")
+        self.assets_js_dir.joinpath("highlight.js").write_text(HIGHLIGHT_JS,encoding="utf-8")
         print("🧩 静态资源写入完成")
 
     def _merge_epub_css(self):
@@ -440,6 +442,8 @@ class EPUBToHTMLConverter:
 window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev else 'null'},nextPage:{f'"{next}"' if next else 'null'}}};window.PAGE_DATE_MAP={date_map_json};window.APP_VERSION="{self.app_version}";</script>
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
+<script src="assets/js/highlight.js" defer></script>
+<script src="assets/js/cache-manifest.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -577,6 +581,188 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 
     def _pwa_actions_script(self) -> str:
         return """<script>
+// ════════════════════════════════════════════════════════════
+// 页面级 PWA 缓存管理（对齐 books/sg 模式）
+//   - 数据缓存桶 sm-data-{version} 版本化切换：更新时先建新桶、成功后删旧桶
+//   - SW 仅做 sm-main 核心预缓存 + 运行时兜底，不参与数据桶生命周期
+//   - 首次安装：弹进度条全量缓存；版本更新：检查版本变化切换桶重新缓存
+// ════════════════════════════════════════════════════════════
+window.SM = window.SM || {};
+// cache-manifest.js 是 defer 加载，内联脚本执行时尚未注入构建版本；
+// 因此 MANIFEST_VERSION 用 getter 实时读取 window.SM_CACHE_MANIFEST_VERSION，
+// 保证 cache-manifest.js 加载完成后任何读取点都能拿到构建版本（避免时序 BUG）。
+Object.defineProperty(window.SM, 'MANIFEST_VERSION', {
+  configurable: true,
+  get: function(){ return window.SM_CACHE_MANIFEST_VERSION || ''; }
+});
+const SM_LS_VERSION = 'sm_pwa_version';
+const SM_LS_BUCKET  = 'sm_pwa_bucket';
+const SM_CONCURRENCY = 6;
+
+function smDataCacheName(ver){ return 'sm-data-' + ver; }
+function smGetLocalVersion(){ try{ return localStorage.getItem(SM_LS_VERSION) || ''; }catch(_){ return ''; } }
+function smSetLocalVersion(v){ try{ localStorage.setItem(SM_LS_VERSION, v); }catch(_){} }
+
+// 全量缓存清单（cache-manifest.js 构建注入）
+function smBuildUrlList(){ return (window.__SM_CACHE_URLS || []).slice(); }
+
+// 全量缓存到指定桶（分片并发 CONCURRENCY=6），进度回调 (ratio,done,total)
+function smCacheFullInto(cacheName, onProgress){
+  if(!('caches' in window)) return Promise.resolve({ok:0,total:0,failed:0});
+  const urls=smBuildUrlList();
+  const total=urls.length;
+  if(total===0){ if(onProgress) onProgress(1,0,0); return Promise.resolve({ok:0,total:0,failed:0}); }
+  let done=0,failed=0,index=0;
+  return caches.open(cacheName).then(function(cache){
+    function nextChunk(){
+      if(index>=total) return Promise.resolve();
+      const slice=urls.slice(index,index+SM_CONCURRENCY);
+      index+=SM_CONCURRENCY;
+      return Promise.all(slice.map(function(url){
+        return fetch(url,{cache:'no-cache'}).then(function(r){
+          if(r && r.status===200){ return cache.put(url,r); }
+          failed++;
+        }).catch(function(){ failed++; }).then(function(){
+          done++;
+          if(onProgress) onProgress(done/total,done,total);
+        });
+      })).then(nextChunk);
+    }
+    return nextChunk();
+  }).then(function(){ return {ok: done-failed, total: total, failed: failed}; });
+}
+
+// 删除所有旧版数据桶（保留 currentBucket）
+function smDeleteOldBuckets(currentBucket){
+  if(!('caches' in window)) return Promise.resolve();
+  return caches.keys().then(function(keys){
+    return Promise.all(
+      keys.filter(function(k){ return k.indexOf('sm-data-')===0 && k!==currentBucket; })
+          .map(function(k){ return caches.delete(k); })
+    );
+  }).catch(function(){});
+}
+
+// 读取远端版本：优先 sw_version（构建时间戳），降级到 version/apk_version（app 版本）
+function smFetchRemoteVersion(){
+  return fetch('./version.json?t='+Date.now(), {cache:'no-cache'})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){ return d.sw_version || d.version || d.apk_version || ''; })
+    .catch(function(){ return ''; });
+}
+
+// 全量安装/更新（切换桶方案）
+// mode: 'install' | 'update'（仅影响对话框文案）
+// version: 可选；缺省时优先级：清单版本 > 远端 > 本地 > 'dev'
+// onProgress(ratio,done,total) → 返回 Promise<{ok,total,failed,version}>
+function smInstall(mode,onProgress,version){
+  let verP;
+  if(version){ verP=Promise.resolve(version); }
+  else if(window.SM && window.SM.MANIFEST_VERSION){ verP=Promise.resolve(window.SM.MANIFEST_VERSION); }
+  else { verP=smFetchRemoteVersion().then(function(rv){ return rv || smGetLocalVersion() || 'dev'; }); }
+  return verP.then(function(ver){
+    const newBucket=smDataCacheName(ver);
+    let oldBucket=null; try{ oldBucket=localStorage.getItem(SM_LS_BUCKET)||null; }catch(_){}
+    return smCacheFullInto(newBucket,onProgress).then(function(res){
+      if(res.failed>0){
+        // 有失败：删新桶，保留旧桶（中途断网/失败旧缓存不动）
+        return caches.delete(newBucket).catch(function(){}).then(function(){ return Object.assign({},res,{version:ver}); });
+      }
+      // 全量成功：记录新桶名+版本，删旧桶
+      try{ localStorage.setItem(SM_LS_BUCKET,newBucket); }catch(_){}
+      smSetLocalVersion(ver);
+      if(oldBucket && oldBucket!==newBucket){
+        return caches.delete(oldBucket).catch(function(){}).then(function(){ return Object.assign({},res,{version:ver}); });
+      }
+      return Object.assign({},res,{version:ver});
+    });
+  });
+}
+
+// 完整性校验：按全量清单实际匹配缓存（caches.match 全局搜索跨桶）
+function smVerifyCacheIntegrity(){
+  if(!('caches' in window)) return Promise.resolve({ok:false,coverage:0,missing:0,missingUrls:[]});
+  const urls=smBuildUrlList().filter(function(u){ return u!=='./'; });
+  if(urls.length===0) return Promise.resolve({ok:true,coverage:1,missing:0,missingUrls:[]});
+  return Promise.all(urls.map(function(u){
+    return caches.match(u).then(function(r){ return r?null:u; });
+  })).then(function(rs){
+    const missing=rs.filter(Boolean);
+    const hits=urls.length-missing.length;
+    const cov=urls.length>0?hits/urls.length:1;
+    return {ok:cov>=1, coverage:cov, missing:missing.length, missingUrls:missing};
+  }).catch(function(){ return {ok:false,coverage:0,missing:0,missingUrls:[]}; });
+}
+
+// 强制安装对话框（进度条）：install 模式自动执行，update 模式等用户选择
+function showMandatoryInstallDialog(mode,targetVersion,onComplete){
+  if(document.getElementById('smInstallMask')) return;
+  const mask=document.createElement('div');
+  mask.id='smInstallMask';
+  mask.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:16px;padding:26px 24px;width:min(320px,86vw);text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3);';
+  const icon=mode==='update'?'🔄':'📦';
+  const title=mode==='update'?'缓存更新中':'首次安装缓存';
+  const sub=mode==='update'?'正在重新缓存最新资源，阅读进度等数据不受影响…':'首次使用将缓存全部内容，请稍候…';
+  box.innerHTML='<div style="font-size:2rem;margin-bottom:8px;">'+icon+'</div>'
+    +'<div style="font-size:1.05rem;font-weight:600;margin-bottom:6px;color:#222;">'+title+'</div>'
+    +'<div style="font-size:.85rem;color:#666;margin-bottom:14px;">'+sub+'</div>'
+    +'<div style="height:8px;border-radius:6px;background:#eceef1;overflow:hidden;margin-bottom:10px;">'
+    +'<div id="smInstallBar" style="height:100%;width:0%;background:#3366ff;border-radius:6px;transition:width .2s linear;"></div></div>'
+    +'<div id="smInstallStatus" style="font-size:.85rem;color:#555;margin-bottom:12px;">正在准备…</div>'
+    +'<button id="smInstallRetry" style="display:none;width:100%;padding:10px;border:none;border-radius:8px;background:#3366ff;color:#fff;font-size:14px;cursor:pointer;">重试</button>'
+    +(mode==='update'?'<button id="smInstallLater" style="width:100%;margin-top:8px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;color:#666;font-size:14px;cursor:pointer;">稍后再说</button>':'');
+  mask.appendChild(box);
+  mask.addEventListener('click',function(e){ e.stopPropagation(); });
+  document.body.appendChild(mask);
+  function closeInstall(){ if(mask.parentNode) mask.parentNode.removeChild(mask); }
+  const statusEl=document.getElementById('smInstallStatus');
+  const bar=document.getElementById('smInstallBar');
+  const retryBtn=document.getElementById('smInstallRetry');
+  const laterBtn=document.getElementById('smInstallLater');
+  function doInstall(){
+    if(retryBtn) retryBtn.style.display='none';
+    if(bar) bar.style.width='0%';
+    if(statusEl) statusEl.textContent='开始缓存资源…';
+    window.SM.pwaCache.install(mode, function(ratio,done,total){
+      const pct=Math.min(Math.round(ratio*100),100);
+      if(bar) bar.style.width=pct+'%';
+      if(statusEl) statusEl.textContent='已缓存：'+pct+'% ('+done+'/'+total+')…';
+    }, targetVersion).then(function(){
+      return smVerifyCacheIntegrity();
+    }).then(function(res){
+      if(res.ok){
+        if(statusEl) statusEl.textContent='✅ 缓存完整，即将重载…';
+        if(bar) bar.style.width='100%';
+        setTimeout(function(){ window.location.reload(); },1200);
+      }else{
+        if(statusEl) statusEl.textContent='⚠ 部分资源未完整（'+Math.round((res.coverage||0)*100)+'%），请重试';
+        if(retryBtn) retryBtn.style.display='block';
+      }
+    }).catch(function(err){
+      if(statusEl) statusEl.textContent='⚠ 出错：'+(err&&err.message||'未知')+'，请重试';
+      if(retryBtn) retryBtn.style.display='block';
+    });
+  }
+  if(retryBtn) retryBtn.addEventListener('click',doInstall);
+  if(laterBtn) laterBtn.addEventListener('click',closeInstall);
+  // install 模式自动执行；update 模式等用户选择
+  if(mode!=='update') doInstall();
+}
+window.showMandatoryInstallDialog=showMandatoryInstallDialog;
+
+// 暴露页面 pwaCache API
+window.SM.pwaCache = {
+  install: function(mode,onProgress,version){ return smInstall(mode,onProgress,version); },
+  pInstall: smInstall,
+  getLocalVersion: smGetLocalVersion,
+  setLocalVersion: smSetLocalVersion,
+  fetchRemoteVersion: smFetchRemoteVersion,
+  verifyIntegrity: smVerifyCacheIntegrity,
+  deleteOldBuckets: smDeleteOldBuckets
+};
+
 let __pwaInstallPrompt = null;
 
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -592,13 +778,23 @@ window.addEventListener('appinstalled', () => {
 });
 
 async function cxCacheInfo() {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg || !reg.active) return { available: false };
-    return new Promise((resolve) => {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = (event) => resolve(event.data || {});
-        reg.active.postMessage({ type: 'CACHE_INFO' }, [channel.port2]);
-    });
+    // 页面级缓存状态：按全量清单统计命中数（跨桶搜索）
+    const urls=(window.__SM_CACHE_URLS||[]).filter(function(u){ return u!=='./'; });
+    let cached=0;
+    if('caches' in window){
+        for(const u of urls){
+            try{ if(await caches.match(u)) cached++; }catch(_){}
+        }
+    }
+    const version = smGetLocalVersion() || (window.SM && window.SM.MANIFEST_VERSION) || '';
+    const total=urls.length;
+    return {
+        available: true,
+        version: version,
+        cached: cached,
+        total: total,
+        pct: total>0?Math.min(100,Math.round(cached/total*100)):0
+    };
 }
 
 async function cxClearCache() {
@@ -612,13 +808,8 @@ async function cxClearCache() {
 }
 
 async function cxEnsureFullCache() {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg || !reg.active) return false;
-    return new Promise((resolve) => {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = (event) => resolve(Boolean(event.data && event.data.ok));
-        reg.active.postMessage({ type: 'ENSURE_FULL_CACHE' }, [channel.port2]);
-    });
+    // 页面级补全：委托 pwaCache 切换桶安装（对齐 books cacheAllBooks）
+    return window.SM.pwaCache.install('install', null).catch(() => ({ ok: 0 }));
 }
 
 function isCapacitorApp() {
@@ -698,19 +889,16 @@ async function setupAdaptiveActions() {
         if (infoBox) infoBox.textContent = '查询中…';
         const info = await cxCacheInfo();
         if (!info.available) {
-            if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
+            if (infoBox) infoBox.textContent = '缓存不可用';
             return;
         }
-        const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
-        const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
-        const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}`;
-        if (pctEl) pctEl.textContent = pct + '%';
-        if (fillEl) fillEl.style.width = pct + '%';
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}`;
+        if (pctEl) pctEl.textContent = info.pct + '%';
+        if (fillEl) fillEl.style.width = info.pct + '%';
     });
 
     clearBtn.addEventListener('click', async () => {
-        if (!confirm('将清除本站所有缓存、本地设置与浏览记录，确认继续？')) return;
+        if (!confirm('将清除本站所有缓存、本地设置、浏览记录与划线笔记，确认继续？')) return;
         const infoBox2 = document.getElementById('cache-info');
         const pctEl2 = document.getElementById('cache-pct');
         const fillEl2 = document.getElementById('cache-progress-fill');
@@ -739,17 +927,10 @@ async function setupAdaptiveActions() {
         } catch (_) {}
 
         if (!ok) { if (infoBox2) infoBox2.textContent = '清理完成（SW 清理失败，已清理本地数据）'; return; }
+        // 清理后自动重建缓存：弹首次安装进度条
         if (infoBox2) infoBox2.textContent = '已全部清理，重新缓存中…';
-        // 等 SW fullPrecache 完成后（cxClearCache 等它结束才返回），再刷新进度
-        const info2 = await cxCacheInfo().catch(() => ({}));
-        if (info2.available) {
-            const total2 = (info2.pages?.total||0)+(info2.statics?.total||0)+(info2.others?.total||0);
-            const cached2 = (info2.pages?.cached||0)+(info2.statics?.cached||0)+(info2.others?.cached||0);
-            const pct2 = total2 > 0 ? Math.min(100, Math.round(cached2/total2*100)) : 0;
-            if (infoBox2) infoBox2.textContent = `版本 ${info2.version||'-'}  缓存 ${cached2}/${total2}`;
-            if (pctEl2) pctEl2.textContent = pct2 + '%';
-            if (fillEl2) fillEl2.style.width = pct2 + '%';
-        }
+        const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
+        showMandatoryInstallDialog('install', _ver);
     });
 
     updateBtn.addEventListener('click', async () => {
@@ -767,6 +948,41 @@ async function setupAdaptiveActions() {
 }
 
 window.addEventListener('load', setupAdaptiveActions);
+
+// ── PWA 启动版本检查（对齐 books checkOnStartup）─────────────
+// 首次安装：无条件弹进度条全量缓存（联网建桶）
+// 版本变化：弹"缓存更新"对话框，由用户选择更新或稍后
+function checkPwaStartupCache(){
+    if(!isStandalonePWA() || isCapacitorApp() || !('caches' in window)) return;
+    const storedVersion = smGetLocalVersion();
+    const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
+    smFetchRemoteVersion().then(function(remote){
+        const target = remote || manifestVer || storedVersion || 'dev';
+        if(storedVersion){
+            // 非首次：仅当版本变化时提示更新（远端或清单版本任一变化）
+            if((remote && remote !== storedVersion) || (manifestVer && manifestVer !== storedVersion)){
+                showMandatoryInstallDialog('update', target);
+            }
+        } else {
+            // 首次安装：自动弹进度条
+            showMandatoryInstallDialog('install', target);
+        }
+    }).catch(function(){
+        // 网络失败：首次安装用清单版本兜底
+        if(!storedVersion && manifestVer){
+            showMandatoryInstallDialog('install', manifestVer);
+        }
+    });
+}
+// 等 SW 注册就绪后再检查（SW 就绪后页面缓存才能被 SW 托管）
+(function(){
+    let done=false;
+    function run(){ if(done) return; done=true; setTimeout(checkPwaStartupCache, 800); }
+    if('serviceWorker' in navigator){
+        navigator.serviceWorker.ready.then(run).catch(run);
+    } else { run(); }
+})();
+
 window.addEventListener('load', () => {
     // 页面加载后自动刷新缓存状态（延迟等 SW 就绪）
     setTimeout(async () => {
@@ -775,27 +991,19 @@ window.addEventListener('load', () => {
         const infoBox = document.getElementById('cache-info');
         const pctEl = document.getElementById('cache-pct');
         const fillEl = document.getElementById('cache-progress-fill');
-        const total = (info.pages?.total||0) + (info.statics?.total||0) + (info.others?.total||0);
-        const cached = (info.pages?.cached||0) + (info.statics?.cached||0) + (info.others?.cached||0);
-        const pct = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}`;
-        if (pctEl) pctEl.textContent = pct + '%';
-        if (fillEl) fillEl.style.width = pct + '%';
+        if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}`;
+        if (pctEl) pctEl.textContent = info.pct + '%';
+        if (fillEl) fillEl.style.width = info.pct + '%';
 
-        // PWA 已安装场景：若未完成全量缓存，自动触发补全。
-        if (!isCapacitorApp() && isStandalonePWA() && total > 0 && cached < total) {
-            if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${cached}/${total}，补全中…`;
-            const ok = await cxEnsureFullCache().catch(() => false);
-            if (ok) {
-                const info2 = await cxCacheInfo().catch(() => ({}));
-                if (info2.available) {
-                    const total2 = (info2.pages?.total||0) + (info2.statics?.total||0) + (info2.others?.total||0);
-                    const cached2 = (info2.pages?.cached||0) + (info2.statics?.cached||0) + (info2.others?.cached||0);
-                    const pct2 = total2 > 0 ? Math.min(100, Math.round(cached2 / total2 * 100)) : 0;
-                    if (infoBox) infoBox.textContent = `版本 ${info2.version||'-'}  缓存 ${cached2}/${total2}`;
-                    if (pctEl) pctEl.textContent = pct2 + '%';
-                    if (fillEl) fillEl.style.width = pct2 + '%';
-                }
+        // PWA 已安装场景：若未完成全量缓存，自动触发补全（页面级重新缓存）
+        if (!isCapacitorApp() && isStandalonePWA() && info.total > 0 && info.cached < info.total) {
+            if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}，补全中…`;
+            await window.SM.pwaCache.install('install', null).catch(() => ({}));
+            const info2 = await cxCacheInfo().catch(() => ({}));
+            if (info2.available) {
+                if (infoBox) infoBox.textContent = `版本 ${info2.version||'-'}  缓存 ${info2.cached}/${info2.total}`;
+                if (pctEl) pctEl.textContent = info2.pct + '%';
+                if (fillEl) fillEl.style.width = info2.pct + '%';
             }
         }
     }, 1200);
@@ -888,6 +1096,8 @@ window.APP_VERSION="{self.app_version}";
 </script>
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
+<script src="assets/js/highlight.js" defer></script>
+<script src="assets/js/cache-manifest.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -1026,8 +1236,11 @@ window.APP_VERSION="{self.app_version}";
         except Exception:
             _app_ver = "1.0.0"
             _app_name = "共读"
+        # SW 版本 = 构建月日时分秒(MMDDHHMMSS)，短版本号便于查看且避免同分钟碰撞
+        _sw_ver = datetime.now().strftime("%m%d%H%M%S")
         version_info = {
             "version": _app_ver,
+            "sw_version": _sw_ver,
             "apk_version": _app_ver,
             "apk_file": f"{_app_name}-v{_app_ver}.apk",
         }
@@ -1052,26 +1265,36 @@ window.APP_VERSION="{self.app_version}";
         self.output_dir.joinpath("offline.htm").write_text(OFFLINE_HTML,encoding="utf-8")
         page_files=[f"page_{i:04d}.htm" for i in range(len(self.spine_items))]
 
-        # Build full local asset manifest for eager PWA precache.
-        # Exclude SW itself, headers metadata, and large APK binaries.
-        all_assets = []
+        # 页面全量缓存清单（cache-manifest.js）：构建时注入 window.__SM_CACHE_URLS。
+        # 页面 pwaCache 依据该清单进行全量缓存（sm-data-{version} 数据桶）。
+        # 含首页/全部章节页 + 全部静态资源；SW 自身与元数据文件不缓存。
+        cache_urls = []
         for p in sorted(self.output_dir.rglob("*")):
             if not p.is_file():
                 continue
             rel = p.relative_to(self.output_dir).as_posix()
             if rel in {"sw.js", "_headers"}:
                 continue
+            if Path(rel).name == "cache-manifest.js":
+                continue
             if rel.lower().endswith(".apk"):
                 continue
-            all_assets.append(f"./{rel}")
+            cache_urls.append(f"./{rel}")
 
-        sw_code=SERVICE_WORKER_JS_NEW.replace("/*__PAGE_DIRS__*/",json.dumps(page_files,ensure_ascii=False))
-        sw_code=sw_code.replace("/*__ALL_ASSETS__*/",json.dumps(all_assets,ensure_ascii=False))
-        # SW 版本 = 构建月日时分秒(MMDDHHMMSS)，短版本号便于查看且避免同分钟碰撞
-        _sw_ver = datetime.now().strftime("%m%d%H%M%S")
-        sw_code=sw_code.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
+        manifest_js = (
+            "// 构建生成：PWA 全量缓存清单（页面 pwaCache 使用，SW 不参与）\n"
+            "window.SM_CACHE_MANIFEST_VERSION=/*__SW_VERSION__*/;\n"
+            "window.__SM_CACHE_URLS=[\n  "
+            + ",\n  ".join(json.dumps(u, ensure_ascii=False) for u in cache_urls)
+            + "\n];\n"
+        ).replace("/*__SW_VERSION__*/", json.dumps(_sw_ver))
+        self.assets_js_dir.joinpath("cache-manifest.js").write_text(
+            manifest_js, encoding="utf-8"
+        )
+
+        sw_code=SERVICE_WORKER_JS_NEW.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
         # sw-register.js 的查询串同步更新，保证浏览器缓存失效
         sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_sw_ver}")
         self.assets_js_dir.joinpath("sw-register.js").write_text(sw_register_code, encoding="utf-8")
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
-        print("📦 已写出 PWA (manifest/version/sw/offline/_headers)")
+        print("📦 已写出 PWA (manifest/version/cache-manifest/sw/offline/_headers)")
