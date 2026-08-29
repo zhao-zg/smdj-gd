@@ -664,8 +664,9 @@ function smInstall(mode,onProgress,version){
     const newBucket=smDataCacheName(ver);
     let oldBucket=null; try{ oldBucket=localStorage.getItem(SM_LS_BUCKET)||null; }catch(_){}
     return smCacheFullInto(newBucket,onProgress).then(function(res){
-      if(res.failed>0){
-        // 有失败：删新桶，保留旧桶（中途断网/失败旧缓存不动）
+      // 清单为空（cache-manifest.js 尚未加载）或全部失败：不存储版本号，避免误判
+      if(res.total===0 || res.failed>0){
+        // 有失败或清单空：删新桶，保留旧桶（中途断网/失败旧缓存不动）
         return caches.delete(newBucket).catch(function(){}).then(function(){ return Object.assign({},res,{version:ver}); });
       }
       // 全量成功：记录新桶名+版本，删旧桶
@@ -975,12 +976,26 @@ function checkPwaStartupCache(){
     });
 }
 // 等 SW 注册就绪后再检查（SW 就绪后页面缓存才能被 SW 托管）
+// 同时等待 cache-manifest.js（defer 脚本）加载完成，确保 __SM_CACHE_URLS 可用
 (function(){
     let done=false;
     function run(){ if(done) return; done=true; setTimeout(checkPwaStartupCache, 800); }
+    function waitForManifest(){
+      if(window.__SM_CACHE_URLS && window.__SM_CACHE_URLS.length > 0){ run(); return; }
+      // cache-manifest.js 尚未加载，轮询等待（最多 5 秒）
+      let attempts=0;
+      const timer=setInterval(function(){
+        attempts++;
+        if(window.__SM_CACHE_URLS && window.__SM_CACHE_URLS.length > 0){
+          clearInterval(timer); run();
+        } else if(attempts > 25){ // 5s 超时
+          clearInterval(timer); run(); // 超时也继续（清单版本兜底）
+        }
+      }, 200);
+    }
     if('serviceWorker' in navigator){
-        navigator.serviceWorker.ready.then(run).catch(run);
-    } else { run(); }
+      navigator.serviceWorker.ready.then(waitForManifest).catch(waitForManifest);
+    } else { waitForManifest(); }
 })();
 
 window.addEventListener('load', () => {
@@ -996,6 +1011,7 @@ window.addEventListener('load', () => {
         if (fillEl) fillEl.style.width = info.pct + '%';
 
         // PWA 已安装场景：若未完成全量缓存，自动触发补全（页面级重新缓存）
+        // total===0 说明 cache-manifest.js 尚未加载，不触发补全避免误判
         if (!isCapacitorApp() && isStandalonePWA() && info.total > 0 && info.cached < info.total) {
             if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}，补全中…`;
             await window.SM.pwaCache.install('install', null).catch(() => ({}));
