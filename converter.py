@@ -643,7 +643,7 @@ function smDeleteOldBuckets(currentBucket){
   }).catch(function(){});
 }
 
-// 读取远端版本：优先 sw_version（构建时间戳），降级到 version/apk_version（app 版本）
+// 读取远端版本：sw_version 与 APK 版本一致（如 0.2.0）
 function smFetchRemoteVersion(){
   return fetch('./version.json?t='+Date.now(), {cache:'no-cache'})
     .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
@@ -1252,8 +1252,10 @@ window.APP_VERSION="{self.app_version}";
         except Exception:
             _app_ver = "1.0.0"
             _app_name = "共读"
-        # SW 版本 = 构建月日时分秒(MMDDHHMMSS)，短版本号便于查看且避免同分钟碰撞
-        _sw_ver = datetime.now().strftime("%m%d%H%M%S")
+        # 版本号统一使用 app_config.json 的 version（与 APK 一致）
+        _sw_ver = _app_ver
+        # 构建时间戳仅用于 SW 注册的缓存失效查询串（不参与版本语义）
+        _build_tag = datetime.now().strftime("%m%d%H%M%S")
         version_info = {
             "version": _app_ver,
             "sw_version": _sw_ver,
@@ -1309,8 +1311,8 @@ window.APP_VERSION="{self.app_version}";
         )
 
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
-        # sw-register.js 的查询串同步更新，保证浏览器缓存失效
-        sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_sw_ver}")
+        # sw-register.js 的查询串用构建时间戳，保证每次部署浏览器缓存失效
+        sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_build_tag}")
         self.assets_js_dir.joinpath("sw-register.js").write_text(sw_register_code, encoding="utf-8")
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
         print("📦 已写出 PWA (manifest/version/cache-manifest/sw/offline/_headers)")
