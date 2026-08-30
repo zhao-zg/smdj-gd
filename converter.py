@@ -96,6 +96,9 @@ class EPUBToHTMLConverter:
         except Exception:
             self.app_version = "1.0.0"
 
+        # 构建时间戳：仅用于静态资源缓存失效查询串（?v=），不参与版本语义
+        self.build_tag = datetime.now().strftime("%m%d%H%M%S")
+
     def convert(self):
         try:
             print("🚀 开始转换:", self.epub_path)
@@ -443,7 +446,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/highlight.js" defer></script>
-<script src="assets/js/cache-manifest.js" defer></script>
+<script src="assets/js/cache-manifest.js?v={self.build_tag}" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -1116,7 +1119,7 @@ window.APP_VERSION="{self.app_version}";
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/highlight.js" defer></script>
-<script src="assets/js/cache-manifest.js" defer></script>
+<script src="assets/js/cache-manifest.js?v={self.build_tag}" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -1257,8 +1260,8 @@ window.APP_VERSION="{self.app_version}";
             _app_name = "共读"
         # 版本号统一使用 app_config.json 的 version（与 APK 一致）
         _sw_ver = _app_ver
-        # 构建时间戳仅用于 SW 注册的缓存失效查询串（不参与版本语义）
-        _build_tag = datetime.now().strftime("%m%d%H%M%S")
+        # 构建时间戳仅用于 SW 注册与清单的缓存失效查询串（不参与版本语义）
+        _build_tag = self.build_tag
         version_info = {
             "version": _app_ver,
             "sw_version": _sw_ver,
@@ -1280,6 +1283,9 @@ window.APP_VERSION="{self.app_version}";
 /version.json
   Cache-Control: no-cache, no-store, must-revalidate
   Access-Control-Allow-Origin: *
+
+/assets/js/cache-manifest.js
+  Cache-Control: no-cache, no-store, must-revalidate
 """
         self.output_dir.joinpath("_headers").write_text(headers_text, encoding="utf-8")
 
@@ -1290,6 +1296,8 @@ window.APP_VERSION="{self.app_version}";
         # 页面 pwaCache 依据该清单进行全量缓存（sm-data-{version} 数据桶）。
         # 含首页/全部章节页 + 全部静态资源；SW 自身与元数据文件不缓存。
         cache_urls = []
+        # 清单自身也加入全量缓存（离线可用）；带 ?v= 的 key 与 SW CORE_ASSETS 预缓存的裸路径不冲突。
+        manifest_asset_url = f"./assets/js/cache-manifest.js?v={_build_tag}"
         for p in sorted(self.output_dir.rglob("*")):
             if not p.is_file():
                 continue
@@ -1301,6 +1309,7 @@ window.APP_VERSION="{self.app_version}";
             if rel.lower().endswith(".apk"):
                 continue
             cache_urls.append(f"./{rel}")
+        cache_urls.append(manifest_asset_url)
 
         manifest_js = (
             "// 构建生成：PWA 全量缓存清单（页面 pwaCache 使用，SW 不参与）\n"
