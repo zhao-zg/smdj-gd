@@ -245,6 +245,10 @@ self.addEventListener('fetch',e=>{
     e.respondWith(handleNavigation(e));
     return;
   }
+  // 正文页(.htm)走缓存优先：命中秒返回 + 后台静默刷新，网络失败不影响已缓存页显示
+  if(/\.htm$/.test(url.pathname)){
+    e.respondWith(cacheFirstThenRevalidate(req));return;
+  }
   if(/\.(css|js|woff2?|ttf|otf)$/.test(url.pathname)){
     e.respondWith(cacheFirstThenRevalidate(req));return;
   }
