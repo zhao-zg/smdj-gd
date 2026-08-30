@@ -953,21 +953,17 @@ window.addEventListener('load', setupAdaptiveActions);
 // ── PWA 启动版本检查（对齐 books checkOnStartup）─────────────
 // 首次安装：无条件弹进度条全量缓存（联网建桶）
 // 版本变化：弹"缓存更新"对话框，由用户选择更新或稍后
-// 守卫条件：排除 Capacitor 原生 App；不要求 standalone 模式——
-//   浏览器访问也应预缓存（用户安装 PWA 前就能完成缓存）
+// 守卫条件：仅 PWA（standalone）模式触发，浏览器普通访问不弹框
 function checkPwaStartupCache(){
-    if(isCapacitorApp() || !('caches' in window)) return;
+    if(!isStandalonePWA() || isCapacitorApp() || !('caches' in window)) return;
     const storedVersion = smGetLocalVersion();
     const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
     smFetchRemoteVersion().then(function(remote){
         const target = remote || manifestVer || storedVersion || 'dev';
         if(storedVersion){
             // 非首次：仅当版本变化时提示更新（远端或清单版本任一变化）
-            // 更新提示仅在 standalone PWA 中弹框，避免浏览器中频繁打断
             if((remote && remote !== storedVersion) || (manifestVer && manifestVer !== storedVersion)){
-                if(isStandalonePWA()){
-                    showMandatoryInstallDialog('update', target);
-                }
+                showMandatoryInstallDialog('update', target);
             }
         } else {
             // 首次安装：自动弹进度条
@@ -1015,10 +1011,9 @@ window.addEventListener('load', () => {
         if (pctEl) pctEl.textContent = info.pct + '%';
         if (fillEl) fillEl.style.width = info.pct + '%';
 
-        // 非首次但未完成全量缓存：自动触发补全（页面级重新缓存）
-        // 不要求 standalone 模式——浏览器访问也应补全缓存
+        // PWA 已安装场景：若未完成全量缓存，自动触发补全（页面级重新缓存）
         // total===0 说明 cache-manifest.js 尚未加载，不触发补全避免误判
-        if (!isCapacitorApp() && info.total > 0 && info.cached < info.total) {
+        if (!isCapacitorApp() && isStandalonePWA() && info.total > 0 && info.cached < info.total) {
             if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}，补全中…`;
             await window.SM.pwaCache.install('install', null).catch(() => ({}));
             const info2 = await cxCacheInfo().catch(() => ({}));
