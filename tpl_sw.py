@@ -54,7 +54,7 @@ SW_REGISTER_JS = r"""
 #   - CACHE_NAME 固定 'sm-main'，不注入版本号（SW 运行时缓存，cache.put 覆盖更新）
 #   - 全量数据缓存由页面 pwaCache 管理（sm-data-{version} 切换桶方案），SW 不参与
 #   - SW activate 零清理：不删除任何缓存（含旧版数据桶），只做 clients.claim()
-#   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 弹进度条全量缓存
+#   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 后台静默全量缓存（不弹进度条）
 #   - 更新：页面检查 version.json 版本变化 → 切换数据桶重新缓存
 
 SERVICE_WORKER_JS_NEW = r"""
@@ -64,7 +64,7 @@ SERVICE_WORKER_JS_NEW = r"""
  *   - CACHE_NAME 固定 'sm-main'：SW 运行时缓存（核心预缓存 + 运行时 cache.put 覆盖）
  *   - 全量数据缓存由页面 pwaCache 管理：sm-data-{version} 切换桶方案，SW 不参与生命周期
  *   - SW activate 零清理：不删除任何缓存（含旧版数据桶），只做 clients.claim()
- *   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 弹进度条全量缓存
+ *   - 首次安装：SW 仅预缓存首屏核心资源；页面 pwaCache 后台静默全量缓存（不弹进度条）
  *   - 更新检查：页面读 version.json，版本变化时切换数据桶重新缓存
  * ============================================================ */
 const CACHE_NAME = 'sm-main';

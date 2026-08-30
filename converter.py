@@ -588,7 +588,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 // 页面级 PWA 缓存管理（对齐 books/sg 模式）
 //   - 数据缓存桶 sm-data-{version} 版本化切换：更新时先建新桶、成功后删旧桶
 //   - SW 仅做 sm-main 核心预缓存 + 运行时兜底，不参与数据桶生命周期
-//   - 首次安装：弹进度条全量缓存；版本更新：检查版本变化切换桶重新缓存
+//   - 首次安装/版本更新：后台静默全量缓存（不弹进度条，缓存完成自动重载）
 // ════════════════════════════════════════════════════════════
 window.SM = window.SM || {};
 // cache-manifest.js 是 defer 加载，内联脚本执行时尚未注入构建版本；
@@ -655,7 +655,7 @@ function smFetchRemoteVersion(){
 }
 
 // 全量安装/更新（切换桶方案）
-// mode: 'install' | 'update'（仅影响对话框文案）
+// mode: 'install' | 'update'（当前无 UI 差异，保留参数兼容）
 // version: 可选；缺省时优先级：清单版本 > 远端 > 本地 > 'dev'
 // onProgress(ratio,done,total) → 返回 Promise<{ok,total,failed,version}>
 function smInstall(mode,onProgress,version){
@@ -698,63 +698,16 @@ function smVerifyCacheIntegrity(){
   }).catch(function(){ return {ok:false,coverage:0,missing:0,missingUrls:[]}; });
 }
 
-// 强制安装对话框（进度条）：install 模式自动执行，update 模式等用户选择
-function showMandatoryInstallDialog(mode,targetVersion,onComplete){
-  if(document.getElementById('smInstallMask')) return;
-  const mask=document.createElement('div');
-  mask.id='smInstallMask';
-  mask.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;';
-  const box=document.createElement('div');
-  box.style.cssText='background:#fff;border-radius:16px;padding:26px 24px;width:min(320px,86vw);text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3);';
-  const icon=mode==='update'?'🔄':'📦';
-  const title=mode==='update'?'缓存更新中':'首次安装缓存';
-  const sub=mode==='update'?'正在重新缓存最新资源，阅读进度等数据不受影响…':'首次使用将缓存全部内容，请稍候…';
-  box.innerHTML='<div style="font-size:2rem;margin-bottom:8px;">'+icon+'</div>'
-    +'<div style="font-size:1.05rem;font-weight:600;margin-bottom:6px;color:#222;">'+title+'</div>'
-    +'<div style="font-size:.85rem;color:#666;margin-bottom:14px;">'+sub+'</div>'
-    +'<div style="height:8px;border-radius:6px;background:#eceef1;overflow:hidden;margin-bottom:10px;">'
-    +'<div id="smInstallBar" style="height:100%;width:0%;background:#3366ff;border-radius:6px;transition:width .2s linear;"></div></div>'
-    +'<div id="smInstallStatus" style="font-size:.85rem;color:#555;margin-bottom:12px;">正在准备…</div>'
-    +'<button id="smInstallRetry" style="display:none;width:100%;padding:10px;border:none;border-radius:8px;background:#3366ff;color:#fff;font-size:14px;cursor:pointer;">重试</button>'
-    +(mode==='update'?'<button id="smInstallLater" style="width:100%;margin-top:8px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;color:#666;font-size:14px;cursor:pointer;">稍后再说</button>':'');
-  mask.appendChild(box);
-  mask.addEventListener('click',function(e){ e.stopPropagation(); });
-  document.body.appendChild(mask);
-  function closeInstall(){ if(mask.parentNode) mask.parentNode.removeChild(mask); }
-  const statusEl=document.getElementById('smInstallStatus');
-  const bar=document.getElementById('smInstallBar');
-  const retryBtn=document.getElementById('smInstallRetry');
-  const laterBtn=document.getElementById('smInstallLater');
-  function doInstall(){
-    if(retryBtn) retryBtn.style.display='none';
-    if(bar) bar.style.width='0%';
-    if(statusEl) statusEl.textContent='开始缓存资源…';
-    window.SM.pwaCache.install(mode, function(ratio,done,total){
-      const pct=Math.min(Math.round(ratio*100),100);
-      if(bar) bar.style.width=pct+'%';
-      if(statusEl) statusEl.textContent='已缓存：'+pct+'% ('+done+'/'+total+')…';
-    }, targetVersion).then(function(){
-      return smVerifyCacheIntegrity();
-    }).then(function(res){
-      if(res.ok){
-        if(statusEl) statusEl.textContent='✅ 缓存完整，即将重载…';
-        if(bar) bar.style.width='100%';
-        setTimeout(function(){ window.location.reload(); },1200);
-      }else{
-        if(statusEl) statusEl.textContent='⚠ 部分资源未完整（'+Math.round((res.coverage||0)*100)+'%），请重试';
-        if(retryBtn) retryBtn.style.display='block';
-      }
-    }).catch(function(err){
-      if(statusEl) statusEl.textContent='⚠ 出错：'+(err&&err.message||'未知')+'，请重试';
-      if(retryBtn) retryBtn.style.display='block';
-    });
-  }
-  if(retryBtn) retryBtn.addEventListener('click',doInstall);
-  if(laterBtn) laterBtn.addEventListener('click',closeInstall);
-  // install 模式自动执行；update 模式等用户选择
-  if(mode!=='update') doInstall();
+// 后台静默全量缓存：不弹任何进度条/对话框，缓存完成后自动重载以切换到新桶
+// 失败/断网时静默保留当前内容，下次启动自动重试
+function smByInstall(targetVersion){
+  window.SM.pwaCache.install('install', null, targetVersion).then(function(res){
+    // 全量成功（含已是最新无变化）才重载；失败/断网保留当前内容不动
+    if(res && res.total > 0 && res.failed === 0){
+      window.location.reload();
+    }
+  }).catch(function(){ /* 静默失败，下次启动重试 */ });
 }
-window.showMandatoryInstallDialog=showMandatoryInstallDialog;
 
 // 暴露页面 pwaCache API
 window.SM.pwaCache = {
@@ -932,10 +885,10 @@ async function setupAdaptiveActions() {
 
         if (!ok) { if (infoBox2) infoBox2.textContent = 'SW 清理失败，已清理本地数据'; }
         else { if (infoBox2) infoBox2.textContent = '已全部清理。'; }
-        // PWA 模式下弹进度条重新缓存；浏览器模式仅清理不弹框
+        // PWA 模式下后台静默重新缓存；浏览器模式仅清理不触发
         if (isStandalonePWA() && !isCapacitorApp()) {
             const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
-            showMandatoryInstallDialog('install', _ver);
+            smByInstall(_ver);
         }
     });
 
@@ -955,10 +908,10 @@ async function setupAdaptiveActions() {
 
 window.addEventListener('load', setupAdaptiveActions);
 
-// ── PWA 启动版本检查（对齐 books checkOnStartup）─────────────
-// 首次安装：无条件弹进度条全量缓存（联网建桶）
-// 版本变化：弹"缓存更新"对话框，由用户选择更新或稍后
-// 守卫条件：仅 PWA（standalone）模式触发，浏览器普通访问不弹框
+// ── PWA 启动版本检查（对齐 books checkForRunning）─────────────
+// 首次安装：后台静默全量缓存（不弹进度条，缓存完成后自动重载）
+// 版本变化：后台静默切换数据桶重新缓存（不弹窗，不打断阅读）
+// 守卫条件：仅 PWA（standalone）模式触发，浏览器普通访问不触发
 function checkPwaStartupCache(){
     if(!isStandalonePWA() || isCapacitorApp() || !('caches' in window)) return;
     const storedVersion = smGetLocalVersion();
@@ -966,18 +919,18 @@ function checkPwaStartupCache(){
     smFetchRemoteVersion().then(function(remote){
         const target = remote || manifestVer || storedVersion || 'dev';
         if(storedVersion){
-            // 非首次：仅当版本变化时提示更新（远端或清单版本任一变化）
+            // 非首次：仅当版本变化时后台切换数据桶重新缓存
             if((remote && remote !== storedVersion) || (manifestVer && manifestVer !== storedVersion)){
-                showMandatoryInstallDialog('update', target);
+                smByInstall(target);
             }
         } else {
-            // 首次安装：自动弹进度条
-            showMandatoryInstallDialog('install', target);
+            // 首次安装：后台静默全量缓存
+            smByInstall(target);
         }
     }).catch(function(){
         // 网络失败：首次安装用清单版本兜底
         if(!storedVersion && manifestVer){
-            showMandatoryInstallDialog('install', manifestVer);
+            smByInstall(manifestVer);
         }
     });
 }
