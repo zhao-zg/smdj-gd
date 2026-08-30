@@ -777,10 +777,6 @@ function isCapacitorApp() {
     return /; wv\\)|\\bwv\\b|capacitor/i.test(ua);
 }
 
-function isStandalonePWA() {
-    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-}
-
 function isAndroidBrowser() {
     return /Android/i.test(navigator.userAgent || '');
 }
@@ -795,18 +791,19 @@ async function setupAdaptiveActions() {
     if (!updateBtn || !downloadBtn || !installBtn || !infoBtn || !clearBtn || !infoBox) return;
 
     const cap = isCapacitorApp();
-    const installed = isStandalonePWA();
     const android = isAndroidBrowser();
 
     if (cap) {
         // APK 内无 Service Worker，不需要缓存/清缓存
         updateBtn.style.display = 'inline-flex';
-    } else if (installed) {
+    } else {
+        // 非 APK（PWA 与普通浏览器）都支持后台全量缓存，均展示缓存信息/清空按钮
         infoBtn.style.display = 'inline-flex';
         clearBtn.style.display = 'inline-flex';
-    } else if (android) {
-        downloadBtn.style.display = 'inline-flex';
-        installBtn.style.display = 'inline-flex';
+        if (android) {
+            downloadBtn.style.display = 'inline-flex';
+            installBtn.style.display = 'inline-flex';
+        }
     }
 
     try {
@@ -885,8 +882,8 @@ async function setupAdaptiveActions() {
 
         if (!ok) { if (infoBox2) infoBox2.textContent = 'SW 清理失败，已清理本地数据'; }
         else { if (infoBox2) infoBox2.textContent = '已全部清理。'; }
-        // PWA 模式下后台静默重新缓存；浏览器模式仅清理不触发
-        if (isStandalonePWA() && !isCapacitorApp()) {
+        // 非 APK 环境下后台静默重新缓存；APK(Capacitor) 无 SW 仅清理不触发
+        if (!isCapacitorApp()) {
             const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
             smByInstall(_ver);
         }
@@ -908,12 +905,12 @@ async function setupAdaptiveActions() {
 
 window.addEventListener('load', setupAdaptiveActions);
 
-// ── PWA 启动版本检查（对齐 books checkForRunning）─────────────
-// 首次安装：后台静默全量缓存（不弹进度条，缓存完成后自动重载）
+// 启动版本检查：只要不是 APK（普通浏览器/PWA）都后台静默全量缓存
+// 首次打开：后台静默全量缓存（不弹进度条，缓存完成后自动重载）
 // 版本变化：后台静默切换数据桶重新缓存（不弹窗，不打断阅读）
-// 守卫条件：仅 PWA（standalone）模式触发，浏览器普通访问不触发
+// 守卫条件：仅 Capacitor(APK) 不触发（无 SW 环境）
 function checkPwaStartupCache(){
-    if(!isStandalonePWA() || isCapacitorApp() || !('caches' in window)) return;
+    if(isCapacitorApp() || !('caches' in window)) return;
     const storedVersion = smGetLocalVersion();
     const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
     smFetchRemoteVersion().then(function(remote){
@@ -969,9 +966,9 @@ window.addEventListener('load', () => {
         if (pctEl) pctEl.textContent = info.pct + '%';
         if (fillEl) fillEl.style.width = info.pct + '%';
 
-        // PWA 已安装场景：若未完成全量缓存，自动触发补全（页面级重新缓存）
+        // 非 APK 场景：若未完成全量缓存，自动触发补全（页面级重新缓存）
         // total===0 说明 cache-manifest.js 尚未加载，不触发补全避免误判
-        if (!isCapacitorApp() && isStandalonePWA() && info.total > 0 && info.cached < info.total) {
+        if (!isCapacitorApp() && info.total > 0 && info.cached < info.total) {
             if (infoBox) infoBox.textContent = `版本 ${info.version||'-'}  缓存 ${info.cached}/${info.total}，补全中…`;
             await window.SM.pwaCache.install('install', null).catch(() => ({}));
             const info2 = await cxCacheInfo().catch(() => ({}));
