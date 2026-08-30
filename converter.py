@@ -376,13 +376,13 @@ class EPUBToHTMLConverter:
         return f"""<!DOCTYPE html><html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <title>目录重定向</title>
-<meta http-equiv="refresh" content="0;url=index.html">
-<script>location.replace('index.html');</script>
+<meta http-equiv="refresh" content="0;url=./">
+<script>location.replace('./');</script>
 <link rel="stylesheet" href="assets/css/core.css">
 <link rel="stylesheet" href="assets/css/themes.css">
 <link rel="stylesheet" href="assets/css/extra.css">
 </head><body>
-<p>跳转到目录... <a href="index.html">若未跳转点击</a></p>
+<p>跳转到目录... <a href="./">若未跳转点击</a></p>
 </body></html>"""
 
     def _build_content_page(self,body:str,idx:int,total:int)->str:
@@ -423,7 +423,7 @@ class EPUBToHTMLConverter:
   <nav class="nav">
     <div class="nav-buttons">
       {prev_btn}
-        <a class="nav-btn" data-nav="toc" href="index.html?from={idx}">目录</a>
+        <a class="nav-btn" data-nav="toc" href="./?from={idx}">目录</a>
       {today_btn}
       {next_btn}
     </div>
@@ -683,7 +683,7 @@ function smInstall(mode,onProgress,version){
 // 完整性校验：按全量清单实际匹配缓存（caches.match 全局搜索跨桶）
 function smVerifyCacheIntegrity(){
   if(!('caches' in window)) return Promise.resolve({ok:false,coverage:0,missing:0,missingUrls:[]});
-  const urls=smBuildUrlList().filter(function(u){ return u!=='./'; });
+  const urls=smBuildUrlList().filter(function(u){ return u!=='./' && u!=='./index.html'; });
   if(urls.length===0) return Promise.resolve({ok:true,coverage:1,missing:0,missingUrls:[]});
   return Promise.all(urls.map(function(u){
     return caches.match(u).then(function(r){ return r?null:u; });
@@ -780,7 +780,7 @@ window.addEventListener('appinstalled', () => {
 
 async function cxCacheInfo() {
     // 页面级缓存状态：按全量清单统计命中数（跨桶搜索）
-    const urls=(window.__SM_CACHE_URLS||[]).filter(function(u){ return u!=='./'; });
+    const urls=(window.__SM_CACHE_URLS||[]).filter(function(u){ return u!=='./' && u!=='./index.html'; });
     let cached=0;
     if('caches' in window){
         for(const u of urls){
@@ -1086,7 +1086,7 @@ window.addEventListener('load', () => {
   <nav class="nav">
     <div class="nav-buttons">
       <a class="nav-btn disabled" data-nav="prev" aria-hidden="true">←</a>
-      <a class="nav-btn" data-nav="toc" href="index.html">目录</a>
+      <a class="nav-btn" data-nav="toc" href="./">目录</a>
       {today_btn}
       <a class="nav-btn disabled" data-nav="next" aria-hidden="true">→</a>
     </div>
@@ -1225,7 +1225,7 @@ window.APP_VERSION="{self.app_version}";
             "name": "共读",
             "short_name": "共读",
             "description": "共读 离线阅读应用",
-            "start_url": "./index.html",
+            "start_url": "./",
             "display": "standalone",
             "background_color": "#ffffff",
             "theme_color": "#ffffff",
@@ -1291,7 +1291,7 @@ window.APP_VERSION="{self.app_version}";
             if not p.is_file():
                 continue
             rel = p.relative_to(self.output_dir).as_posix()
-            if rel in {"sw.js", "_headers"}:
+            if rel in {"sw.js", "_headers", "index.html"}:
                 continue
             if Path(rel).name == "cache-manifest.js":
                 continue

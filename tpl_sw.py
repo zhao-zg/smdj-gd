@@ -79,7 +79,6 @@ const NAV_TIMEOUT = 15000;
 // 该列表须是 __SM_CACHE_URLS 的子集（构建生成清单时校验）。
 const CORE_ASSETS = [
   './',
-  './index.html',
   './offline.htm',
   './manifest.json',
   './manifest.webmanifest',
@@ -171,6 +170,11 @@ self.addEventListener('activate', e=>{
 async function handleNavigation(event){
   const request=event.request;
   const url=new URL(request.url);
+  // /index.html → / 重定向（保持 URL 干净，不缓存 index.html）
+  if(url.pathname.endsWith('/index.html')){
+    const dir=url.pathname.slice(0,-'index.html'.length);
+    return Response.redirect(url.origin+dir+url.search+url.hash,302);
+  }
   const normalizedURL=url.origin + normalizeUrlPathname(url.pathname);
   // 不使用 navigationPreload：离线时 event.preloadResponse 可能挂起导致导航超时。
   // 全局缓存搜索：可命中页面数据桶（sm-data-{version}）或核心桶（sm-main）

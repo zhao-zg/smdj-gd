@@ -61,7 +61,7 @@ function markSessionSeenAndCheckFirst() {
 
 function resumeLastReadPageIfNeeded(firstInSession) {
   const p = location.pathname;
-  const isIndex = p === '/' || p.endsWith('/index.html') || p.endsWith('/index.htm');
+  const isIndex = p === '/' || p.endsWith('/');
   if (!isIndex) return false;
 
   // 同一会话中，从正文页点“目录”会带 from 参数，此时不自动跳回，避免打断看目录。
@@ -524,7 +524,7 @@ function updateNavBarByPageInfo(pageInfo) {
   }
 
   if (tocBtn) {
-    const correct = (pageInfo.current === -1) ? 'index.html' : ('index.html?from=' + pageInfo.current);
+    const correct = (pageInfo.current === -1) ? './' : ('./?from=' + pageInfo.current);
     if (tocBtn.getAttribute('href') != correct) tocBtn.setAttribute('href', correct);
     tocBtn.dataset.nav = 'toc';
   }
@@ -686,7 +686,7 @@ function initSWDisableCheck() {
 /* ---- Android 后退键 ---- */
 function isIndexPage() {
   const p = location.pathname;
-  return p === '/' || p.endsWith('/index.html') || p.endsWith('/index.htm');
+  return p === '/' || p.endsWith('/');
 }
 
 function initAndroidBack() {
