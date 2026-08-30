@@ -927,11 +927,13 @@ async function setupAdaptiveActions() {
             })));
         } catch (_) {}
 
-        if (!ok) { if (infoBox2) infoBox2.textContent = 'SW 清理失败，已清理本地数据，重新缓存中…'; }
-        else { if (infoBox2) infoBox2.textContent = '已全部清理，重新缓存中…'; }
-        // 无论 SW 清理结果如何，都弹进度条重新缓存
-        const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
-        showMandatoryInstallDialog('install', _ver);
+        if (!ok) { if (infoBox2) infoBox2.textContent = 'SW 清理失败，已清理本地数据'; }
+        else { if (infoBox2) infoBox2.textContent = '已全部清理。'; }
+        // PWA 模式下弹进度条重新缓存；浏览器模式仅清理不弹框
+        if (isStandalonePWA() && !isCapacitorApp()) {
+            const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
+            showMandatoryInstallDialog('install', _ver);
+        }
     });
 
     updateBtn.addEventListener('click', async () => {
