@@ -8,6 +8,7 @@ on:
       - "main.py"
       - "converter.py"
       - "templates.py"
+      - "tpl_sw.py"
       - "icon_generator.py"
       - "app_config.json"
       - "package.json"
