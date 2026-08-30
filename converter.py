@@ -799,13 +799,13 @@ async function cxCacheInfo() {
 }
 
 async function cxClearCache() {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg || !reg.active) return false;
-    return new Promise((resolve) => {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = (event) => resolve(Boolean(event.data && event.data.ok));
-        reg.active.postMessage({ type: 'CLEAR_CACHE' }, [channel.port2]);
-    });
+    // 页面侧直接清理 Cache Storage，不依赖 SW 消息通道
+    if (!('caches' in window)) return false;
+    try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+        return true;
+    } catch (_) { return false; }
 }
 
 async function cxEnsureFullCache() {
@@ -927,9 +927,9 @@ async function setupAdaptiveActions() {
             })));
         } catch (_) {}
 
-        if (!ok) { if (infoBox2) infoBox2.textContent = '清理完成（SW 清理失败，已清理本地数据）'; return; }
-        // 清理后自动重建缓存：弹首次安装进度条
-        if (infoBox2) infoBox2.textContent = '已全部清理，重新缓存中…';
+        if (!ok) { if (infoBox2) infoBox2.textContent = 'SW 清理失败，已清理本地数据，重新缓存中…'; }
+        else { if (infoBox2) infoBox2.textContent = '已全部清理，重新缓存中…'; }
+        // 无论 SW 清理结果如何，都弹进度条重新缓存
         const _ver = (window.SM && window.SM.MANIFEST_VERSION) || '';
         showMandatoryInstallDialog('install', _ver);
     });
