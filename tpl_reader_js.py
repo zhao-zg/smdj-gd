@@ -189,55 +189,39 @@ function initControls() {
   const openBtn = document.getElementById('open-settings');
   const closeBtn = document.getElementById('close-settings');
 
-  let _cachePoller = null;
-
-  function queryCacheInfo() {
-    if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (!reg || !reg.active) return;
-      const ch = new MessageChannel();
-      ch.port1.onmessage = ev => {
-        const info      = ev.data || {};
-        const infoBox   = document.getElementById('cache-info');
-        const pctEl     = document.getElementById('cache-pct');
-        const fillEl    = document.getElementById('cache-progress-fill');
-        const statusBox = document.getElementById('cache-status-box');
-        if (statusBox) statusBox.style.display = 'block';
-        if (!info.available) {
-          if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
-          return;
-        }
-        const total  = (info.pages?.total  || 0) + (info.statics?.total  || 0) + (info.others?.total  || 0);
-        const cached = (info.pages?.cached || 0) + (info.statics?.cached || 0) + (info.others?.cached || 0);
-        const pct    = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  缓存 ${cached}/${total}`;
-        if (pctEl)   pctEl.textContent   = pct + '%';
-        if (fillEl)  fillEl.style.width  = pct + '%';
-      };
-      reg.active.postMessage({ type: 'CACHE_INFO' }, [ch.port2]);
-    }).catch(() => {});
+  // 缓存状态查询：复用页面级 cxCacheInfo()（按全量清单跨桶统计命中数），
+  // 与 infoBtn/启动补全共用同一数据源，避免与 SW CACHE_INFO 消息字段不一致。
+  async function queryCacheInfo() {
+    const statusBox = document.getElementById('cache-status-box');
+    const infoBox   = document.getElementById('cache-info');
+    const pctEl     = document.getElementById('cache-pct');
+    const fillEl    = document.getElementById('cache-progress-fill');
+    if (statusBox) statusBox.style.display = 'block';
+    if (infoBox) infoBox.textContent = '查询中…';
+    if (typeof window.cxCacheInfo !== 'function') {
+      if (infoBox) infoBox.textContent = '缓存状态不可用';
+      return;
+    }
+    const info = await window.cxCacheInfo();
+    if (!info.available) { if (infoBox) infoBox.textContent = '缓存不可用'; return; }
+    if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  缓存 ${info.cached}/${info.total}`;
+    if (pctEl)   pctEl.textContent   = info.pct + '%';
+    if (fillEl)  fillEl.style.width  = info.pct + '%';
   }
 
-  function startCachePoller() {
+  function openPanel() {
+    panel.setAttribute('data-open',   'true');
+    panel.setAttribute('aria-hidden', 'false');
+    // 打开时刷新一次缓存状态（后台静默缓存期间每次打开都能看到最新进度）
     queryCacheInfo();
-    _cachePoller = setInterval(queryCacheInfo, 2000);
-  }
-
-  function stopCachePoller() {
-    if (_cachePoller) { clearInterval(_cachePoller); _cachePoller = null; }
   }
 
   function closePanel() {
     panel.setAttribute('data-open',   'false');
     panel.setAttribute('aria-hidden', 'true');
-    stopCachePoller();
   }
 
-  openBtn && openBtn.addEventListener('click', () => {
-    panel.setAttribute('data-open',   'true');
-    panel.setAttribute('aria-hidden', 'false');
-    startCachePoller();
-  });
+  openBtn && openBtn.addEventListener('click', () => openPanel());
 
   closeBtn && closeBtn.addEventListener('click', () => closePanel());
 
