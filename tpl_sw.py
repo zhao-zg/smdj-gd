@@ -177,8 +177,10 @@ async function handleNavigation(event){
   }
   const normalizedURL=url.origin + normalizeUrlPathname(url.pathname);
   // 不使用 navigationPreload：离线时 event.preloadResponse 可能挂起导致导航超时。
-  // 全局缓存搜索：可命中页面数据桶（sm-data-{version}）或核心桶（sm-main）
-  const cached=await caches.match(request) || await caches.match(normalizedURL) || await caches.match('./');
+  // 全局缓存搜索：可命中页面数据桶（sm-data-{version}）或核心桶（sm-main）。
+  // 注意：不要用 caches.match('./') 兜底——它会把目录页当作正文页返回，
+  // 导致"点目录栏目后地址变成 page_XXXX.htm 但内容仍是目录页"。未缓存的正文页应走网络，网络失败回退 offline。
+  const cached=await caches.match(request) || await caches.match(normalizedURL);
   if(cached){
     log('nav cache hit',normalizedURL);
     return cached;
