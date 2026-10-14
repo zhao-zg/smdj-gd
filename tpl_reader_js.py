@@ -61,7 +61,7 @@ function markSessionSeenAndCheckFirst() {
 
 function resumeLastReadPageIfNeeded(firstInSession) {
   const p = location.pathname;
-  const isIndex = p === '/' || p.endsWith('/index.html') || p.endsWith('/index.htm');
+  const isIndex = p === '/' || p.endsWith('/');
   if (!isIndex) return false;
 
   // 同一会话中，从正文页点“目录”会带 from 参数，此时不自动跳回，避免打断看目录。
@@ -193,55 +193,39 @@ function initControls() {
   const openBtn = document.getElementById('open-settings');
   const closeBtn = document.getElementById('close-settings');
 
-  let _cachePoller = null;
-
-  function queryCacheInfo() {
-    if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (!reg || !reg.active) return;
-      const ch = new MessageChannel();
-      ch.port1.onmessage = ev => {
-        const info      = ev.data || {};
-        const infoBox   = document.getElementById('cache-info');
-        const pctEl     = document.getElementById('cache-pct');
-        const fillEl    = document.getElementById('cache-progress-fill');
-        const statusBox = document.getElementById('cache-status-box');
-        if (statusBox) statusBox.style.display = 'block';
-        if (!info.available) {
-          if (infoBox) infoBox.textContent = 'Service Worker 未就绪';
-          return;
-        }
-        const total  = (info.pages?.total  || 0) + (info.statics?.total  || 0) + (info.others?.total  || 0);
-        const cached = (info.pages?.cached || 0) + (info.statics?.cached || 0) + (info.others?.cached || 0);
-        const pct    = total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0;
-        if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  缓存 ${cached}/${total}`;
-        if (pctEl)   pctEl.textContent   = pct + '%';
-        if (fillEl)  fillEl.style.width  = pct + '%';
-      };
-      reg.active.postMessage({ type: 'CACHE_INFO' }, [ch.port2]);
-    }).catch(() => {});
+  // 缓存状态查询：复用页面级 cxCacheInfo()（按全量清单跨桶统计命中数），
+  // 与 infoBtn/启动补全共用同一数据源，避免与 SW CACHE_INFO 消息字段不一致。
+  async function queryCacheInfo() {
+    const statusBox = document.getElementById('cache-status-box');
+    const infoBox   = document.getElementById('cache-info');
+    const pctEl     = document.getElementById('cache-pct');
+    const fillEl    = document.getElementById('cache-progress-fill');
+    if (statusBox) statusBox.style.display = 'block';
+    if (infoBox) infoBox.textContent = '查询中…';
+    if (typeof window.cxCacheInfo !== 'function') {
+      if (infoBox) infoBox.textContent = '缓存状态不可用';
+      return;
+    }
+    const info = await window.cxCacheInfo();
+    if (!info.available) { if (infoBox) infoBox.textContent = '缓存不可用'; return; }
+    if (infoBox) infoBox.textContent = `版本 ${info.version || '-'}  缓存 ${info.cached}/${info.total}`;
+    if (pctEl)   pctEl.textContent   = info.pct + '%';
+    if (fillEl)  fillEl.style.width  = info.pct + '%';
   }
 
-  function startCachePoller() {
+  function openPanel() {
+    panel.setAttribute('data-open',   'true');
+    panel.setAttribute('aria-hidden', 'false');
+    // 打开时刷新一次缓存状态（后台静默缓存期间每次打开都能看到最新进度）
     queryCacheInfo();
-    _cachePoller = setInterval(queryCacheInfo, 2000);
-  }
-
-  function stopCachePoller() {
-    if (_cachePoller) { clearInterval(_cachePoller); _cachePoller = null; }
   }
 
   function closePanel() {
     panel.setAttribute('data-open',   'false');
     panel.setAttribute('aria-hidden', 'true');
-    stopCachePoller();
   }
 
-  openBtn && openBtn.addEventListener('click', () => {
-    panel.setAttribute('data-open',   'true');
-    panel.setAttribute('aria-hidden', 'false');
-    startCachePoller();
-  });
+  openBtn && openBtn.addEventListener('click', () => openPanel());
 
   closeBtn && closeBtn.addEventListener('click', () => closePanel());
 
@@ -528,10 +512,45 @@ function updateNavBarByPageInfo(pageInfo) {
   }
 
   if (tocBtn) {
-    const correct = (pageInfo.current === -1) ? 'index.html' : ('index.html?from=' + pageInfo.current);
+    const correct = (pageInfo.current === -1) ? './' : ('./?from=' + pageInfo.current);
     if (tocBtn.getAttribute('href') != correct) tocBtn.setAttribute('href', correct);
     tocBtn.dataset.nav = 'toc';
   }
+}
+
+/* ---- 页面文本获取：网络优先，失败回退 Cache Storage（离线/域名失效仍可翻页） ---- */
+function fetchPageTextFromCache(url) {
+  if (!('caches' in window)) return Promise.reject(new Error('no caches'));
+  return caches.match(url).then(res => {
+    if (res && res.ok) return res.text();
+    throw new Error('cache miss');
+  });
+}
+
+function loadPageText(url) {
+  return fetch(url, { credentials: 'same-origin' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .catch(err => {
+      logNav('net fail, fallback cache', err && err.message);
+      return fetchPageTextFromCache(url);
+    });
+}
+
+function parsePageEntry(html) {
+  const doc     = new DOMParser().parseFromString(html, 'text/html');
+  const content = doc.querySelector('#reader-content');
+  let pageInfo  = null;
+  for (const s of doc.querySelectorAll('script')) {
+    const txt = s.textContent || '';
+    if (txt.includes('window.PAGE_INFO')) {
+      try {
+        const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+?\})\s*;/s);
+        if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
+      } catch (_) {}
+    }
+  }
+  if (content && pageInfo) return { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo };
+  return null;
 }
 
 /* ---- 预取相邻页面 ---- */
@@ -540,25 +559,10 @@ function prefetchLink(url) {
   if (localStorage.getItem('prefetchDisable') === '1') return;
   if (pageCache.has(url)) return;
   logNav('prefetch', url);
-  fetch(url, { credentials: 'same-origin' })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  loadPageText(url)
     .then(html => {
-      const doc     = new DOMParser().parseFromString(html, 'text/html');
-      const content = doc.querySelector('#reader-content');
-      let pageInfo  = null;
-      for (const s of doc.querySelectorAll('script')) {
-        const txt = s.textContent || '';
-        if (txt.includes('window.PAGE_INFO')) {
-          try {
-            const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);
-            if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
-          } catch (_) {}
-        }
-      }
-      if (content && pageInfo) {
-        pageCache.set(url, { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo });
-        trimCache();
-      }
+      const entry = parsePageEntry(html);
+      if (entry) { pageCache.set(url, entry); trimCache(); }
     })
     .catch(() => {});
 }
@@ -585,23 +589,10 @@ function customNavigate(url, dir) {
 function smoothTransitionTo(url, dir = 'next', allowFetch = true) {
   if (pageCache.has(url)) { doPageSwap(url, pageCache.get(url), dir); return; }
   if (!allowFetch) { location.href = url; return; }
-  fetch(url, { credentials: 'same-origin' })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  loadPageText(url)
     .then(html => {
-      const doc     = new DOMParser().parseFromString(html, 'text/html');
-      const content = doc.querySelector('#reader-content');
-      let pageInfo  = null;
-      for (const s of doc.querySelectorAll('script')) {
-        const txt = s.textContent || '';
-        if (txt.includes('window.PAGE_INFO')) {
-          try {
-            const m = txt.match(/window\.PAGE_INFO\s*=\s*(\{[^;]+});/);
-            if (m) { pageInfo = eval('(' + m[1] + ')'); break; }
-          } catch (_) {}
-        }
-      }
-      if (content && pageInfo) {
-        const entry = { doc, contentHTML: content.innerHTML, title: doc.title, pageInfo };
+      const entry = parsePageEntry(html);
+      if (entry) {
         pageCache.set(url, entry); trimCache();
         doPageSwap(url, entry, dir);
       } else {
@@ -653,6 +644,10 @@ function afterSwap(url, entry) {
   updateProgress();
   installInitialPrefetch();
   reinitDynamicFeatures();
+  /* 换页后重新应用当前页划线/标记/批注（换页 innerHTML 重建了 DOM） */
+  if (window.SMHighlights && typeof window.SMHighlights.refresh === 'function') {
+    window.SMHighlights.refresh();
+  }
   /* 换页后重新扫描新页面的句子，并同步 TTS 栏可见性（仅正文页显示） */
   toggleTTSVisibility(st.ttsVisible);
   if (window._ttsDock) {
@@ -685,7 +680,7 @@ function initSWDisableCheck() {
 /* ---- Android 后退键 ---- */
 function isIndexPage() {
   const p = location.pathname;
-  return p === '/' || p.endsWith('/index.html') || p.endsWith('/index.htm');
+  return p === '/' || p.endsWith('/');
 }
 
 function initAndroidBack() {

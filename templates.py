@@ -16,3 +16,4 @@ from tpl_reader_js import *      # noqa: F401,F403
 from tpl_app_update_js import *  # noqa: F401,F403
 from tpl_tts_js import *         # noqa: F401,F403
 from tpl_sw import *             # noqa: F401,F403
+from tpl_highlight_js import *   # noqa: F401,F403
