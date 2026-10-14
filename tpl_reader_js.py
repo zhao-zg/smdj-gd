@@ -66,11 +66,15 @@ function resumeLastReadPageIfNeeded(firstInSession) {
 
   // 同一会话中，从正文页点“目录”会带 from 参数，此时不自动跳回，避免打断看目录。
   const qs = new URLSearchParams(location.search);
-  if (!firstInSession && qs.has('from')) return false;
+  if (qs.has('from')) return false;
 
   try {
     const last = localStorage.getItem(LAST_PAGE_KEY);
-    if (!last || !/^page_\d{4}\.htm$/.test(last)) return false;
+    if (!last || !/^page_\d{4,}\.htm$/.test(last)) return false;
+    const lastIndex = parseInt(last.slice(5), 10);
+    const total = window.PAGE_INFO?.total;
+    if (Number.isFinite(total) && lastIndex >= total) return false;
+    if ((window.READER_REDIRECT_PAGES || []).includes(lastIndex)) return false;
     const currentFile = (p.split('/').pop() || '').toLowerCase();
     if (currentFile === last.toLowerCase()) return false;
     location.replace(last);
@@ -609,6 +613,12 @@ function smoothTransitionTo(url, dir = 'next', allowFetch = true) {
 
 function doPageSwap(url, entry, dir) {
   saveScrollImmediate();
+  const currentBook = document.querySelector('#reader-content .epub-book')?.dataset.bookId || null;
+  const targetBook = entry.doc.querySelector('#reader-content .epub-book')?.dataset.bookId || null;
+  if (currentBook !== targetBook) {
+    location.href = url;
+    return;
+  }
   /* 换页前停止 TTS，避免继续朗读旧页内容 */
   if (window._ttsDock && (window._ttsDock.playing || window._ttsDock.paused)) {
     window._ttsDock.stop();

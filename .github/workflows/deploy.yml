@@ -57,7 +57,7 @@ jobs:
           node-version: "18"
 
       - name: Install Python dependencies
-        run: pip install pillow
+        run: pip install -r requirements.txt
 
       - name: Install CJK fonts for icon rendering
         shell: bash

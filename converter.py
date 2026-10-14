@@ -383,9 +383,14 @@ class EPUBToHTMLConverter:
 <p>跳转到目录... <a href="index.html">若未跳转点击</a></p>
 </body></html>"""
 
+    def _page_neighbors(self, idx: int, total: int):
+        return (
+            f"page_{idx-1:04d}.htm" if idx>0 else None,
+            f"page_{idx+1:04d}.htm" if idx<total-1 else None,
+        )
+
     def _build_content_page(self,body:str,idx:int,total:int)->str:
-        prev=f"page_{idx-1:04d}.htm" if idx>0 else None
-        next=f"page_{idx+1:04d}.htm" if idx<total-1 else None
+        prev,next=self._page_neighbors(idx,total)
         page_title=self._toc_title_by_index(idx) or f"第 {idx+1} 页"
         body=self._replace_first_heading(body, page_title)
         today_btn=""

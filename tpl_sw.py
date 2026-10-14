@@ -255,7 +255,7 @@ async function cacheFirstRevalidate(req,cacheName){
 }
 self.addEventListener('install',e=>{
   e.waitUntil((async()=>{
-    await corePrecache('install-core-only');
+    await runFullPrecacheOnce('install');
   })());
   self.skipWaiting();
 });
@@ -266,9 +266,8 @@ self.addEventListener('activate',e=>{
     if(self.registration.navigationPreload){
       try{await self.registration.navigationPreload.enable();}catch(_){}
     }
-    // install 阶段已完成 fullPrecache，这里不再重复跑，避免双倍预缓存流量。
+    await self.clients.claim();
   })());
-  self.clients.claim();
 });
 self.addEventListener('fetch',e=>{
   const req=e.request;
