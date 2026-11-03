@@ -211,6 +211,8 @@ class MergedEPUBConverter(EPUBToHTMLConverter):
                 self.page_books.append(book)
             day_numbers = []
             for item in parser.toc_items:
+                if book["title"] == "罗马研读（富）" and item["title"] == "第669天-周二-第三十五周小排追求":
+                    item["title"] = "第672天-周二-第三十五周小排追求"
                 source = (parser.opf_dir / unquote(urlsplit(item["href"]).path)).resolve()
                 if not source.is_relative_to(book["root"].resolve()):
                     raise ValueError(f"目录链接越界: {item['href']}")

@@ -10,14 +10,15 @@ from main import build_parser, collect_epub_files, numbered_epub_files
 from merged_converter import MergedEPUBConverter
 
 
-def make_epub(path, marker, days=(1, 2), frontmatter=False):
+def make_epub(path, marker, days=(1, 2), frontmatter=False, titles=None):
+    titles = titles or (f"第{days[0]}天-2020-01-01-周一", f"第{days[1]}天-周二")
     front_manifest = '<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/><item id="method" href="method.xhtml" media-type="application/xhtml+xml"/>' if frontmatter else ""
     front_spine = '<itemref idref="notes"/><itemref idref="method"/>' if frontmatter else ""
     front_toc = '<navPoint><navLabel><text>说明</text></navLabel><content src="notes.xhtml"/></navPoint><navPoint><navLabel><text>使用生命读经信息研读圣经的方法</text></navLabel><content src="method.xhtml"/></navPoint>' if frontmatter else ""
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("META-INF/container.xml", '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>')
         archive.writestr("OPS/book.opf", f'<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>{front_manifest}<item id="first" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="last" href="end.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="toc"/>{front_spine}<itemref idref="first"/><itemref idref="last"/></spine></package>')
-        archive.writestr("OPS/book.ncx", f'<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap><navPoint><navLabel><text>目录</text></navLabel><content src="toc.xhtml"/></navPoint>{front_toc}<navPoint><navLabel><text>第{days[0]}天-2020-01-01-周一</text></navLabel><content src="chapter.xhtml"/></navPoint><navPoint><navLabel><text>第{days[1]}天-周二</text></navLabel><content src="end.xhtml"/></navPoint></navMap></ncx>')
+        archive.writestr("OPS/book.ncx", f'<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap><navPoint><navLabel><text>目录</text></navLabel><content src="toc.xhtml"/></navPoint>{front_toc}<navPoint><navLabel><text>{titles[0]}</text></navLabel><content src="chapter.xhtml"/></navPoint><navPoint><navLabel><text>{titles[1]}</text></navLabel><content src="end.xhtml"/></navPoint></navMap></ncx>')
         archive.writestr("OPS/toc.xhtml", '<html><body><h1>目录</h1></body></html>')
         if frontmatter:
             archive.writestr("OPS/notes.xhtml", '<html><body><h1>说明</h1></body></html>')
@@ -103,8 +104,12 @@ class MergedReaderTests(unittest.TestCase):
         self.assertIn("../images/shared.png", stylesheet)
         index = (self.output / "index.html").read_text(encoding="utf-8")
         self.assertLess(index.index("<h2>first</h2>"), index.index("<h2>second</h2>"))
-        self.assertIn("assets/books/book_002/OPS/images/shared.png", (self.output / "sw.js").read_text(encoding="utf-8"))
-        self.assertIn("await runFullPrecacheOnce('install')", (self.output / "sw.js").read_text(encoding="utf-8"))
+        # 全量缓存清单由页面 pwaCache 使用（cache-manifest.js），SW 仅预缓存核心资源
+        cache_manifest = (self.output / "assets/js/cache-manifest.js").read_text(encoding="utf-8")
+        self.assertIn("assets/books/book_002/OPS/images/shared.png", cache_manifest)
+        self.assertIn("window.__SM_CACHE_HASHES=", cache_manifest)
+        self.assertIn("window.SM_CACHE_CONTENT_HASH=", cache_manifest)
+        self.assertIn('"content_hash"', (self.output / "version.json").read_text(encoding="utf-8"))
 
     def test_source_inline_styles_and_heading_attributes_survive(self):
         self.convert()
@@ -171,6 +176,22 @@ class MergedReaderTests(unittest.TestCase):
         make_epub(self.paths[0], "FIRST", days=(1, 1))
         converter = self.convert()
         self.assertEqual(converter.date_map, {"2026-01-01": 1, "2026-01-02": 4, "2026-01-03": 5})
+
+    def test_romans_last_group_study_keeps_november_3(self):
+        romans = self.root / "001_罗马研读（富）.epub"
+        make_epub(romans, "ROMANS", titles=(
+            "第671天-周五-第六十九篇•在灵里经历那灵的工作（下）",
+            "第669天-周二-第三十五周小排追求",
+        ))
+        converter = self.convert([romans, self.paths[1]], start_date="2026-11-02")
+        self.assertEqual(converter.date_map["2026-11-02"], 1)
+        self.assertEqual(converter.date_map["2026-11-03"], 2)
+        self.assertEqual(converter.date_map["2026-11-04"], 4)
+        self.assertIn("第672天(2026-11-03)", converter._toc_title_by_index(2))
+        self.assertIn("第三十五周小排追求", converter._toc_title_by_index(2))
+        self.assertIn("第673天(2026-11-04)", converter._toc_title_by_index(4))
+        self.assertEqual(converter.navigation[2], (1, 4))
+        self.assertIn("第672天(2026-11-03)", (self.output / "page_0002.htm").read_text(encoding="utf-8"))
 
     def test_reading_order_follows_days_not_misordered_spine(self):
         make_epub(self.paths[0], "FIRST", days=(670, 669))

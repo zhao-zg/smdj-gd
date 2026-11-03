@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import tempfile
+import hashlib
 import html
 import json
 from pathlib import Path
@@ -451,7 +452,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/highlight.js" defer></script>
-<script src="assets/js/cache-manifest.js?v={self.build_tag}" defer></script>
+<script src="assets/js/cache-manifest.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -605,31 +606,52 @@ Object.defineProperty(window.SM, 'MANIFEST_VERSION', {
 });
 const SM_LS_VERSION = 'sm_pwa_version';
 const SM_LS_BUCKET  = 'sm_pwa_bucket';
+const SM_LS_HASH    = 'sm_pwa_content_hash';
+const SM_LS_HASHES  = 'sm_pwa_file_hashes';
 const SM_CONCURRENCY = 6;
 
 function smDataCacheName(ver){ return 'sm-data-' + ver; }
 function smGetLocalVersion(){ try{ return localStorage.getItem(SM_LS_VERSION) || ''; }catch(_){ return ''; } }
 function smSetLocalVersion(v){ try{ localStorage.setItem(SM_LS_VERSION, v); }catch(_){} }
+// 全站内容哈希（上次全量成功时的 content_hash）与逐文件哈希表（用于内容一致性比对）
+function smGetLocalContentHash(){ try{ return localStorage.getItem(SM_LS_HASH) || ''; }catch(_){ return ''; } }
+function smSetLocalContentHash(h){ try{ localStorage.setItem(SM_LS_HASH, h || ''); }catch(_){} }
+function smLoadFileHashes(){ try{ return JSON.parse(localStorage.getItem(SM_LS_HASHES) || '{}') || {}; }catch(_){ return {}; } }
+function smSaveFileHashes(m){ try{ localStorage.setItem(SM_LS_HASHES, JSON.stringify(m)); }catch(_){} }
 
 // 全量缓存清单（cache-manifest.js 构建注入）
 function smBuildUrlList(){ return (window.__SM_CACHE_URLS || []).slice(); }
+function smBuildHashMap(){ return window.__SM_CACHE_HASHES || {}; }
 
 // 全量缓存到指定桶（分片并发 CONCURRENCY=6），进度回调 (ratio,done,total)
+// 增量 + 内容一致性：已缓存且内容哈希一致的 URL 跳过；
+// 哈希不一致（版本没变但内容更新）或缺失的重新下载覆盖。
 function smCacheFullInto(cacheName, onProgress){
-  if(!('caches' in window)) return Promise.resolve({ok:0,total:0,failed:0});
+  if(!('caches' in window)) return Promise.resolve({ok:0,total:0,failed:0,fetched:0});
   const urls=smBuildUrlList();
+  const hashes=smBuildHashMap();
+  const localHashes=smLoadFileHashes();
   const total=urls.length;
-  if(total===0){ if(onProgress) onProgress(1,0,0); return Promise.resolve({ok:0,total:0,failed:0}); }
-  let done=0,failed=0,index=0;
+  if(total===0){ if(onProgress) onProgress(1,0,0); return Promise.resolve({ok:0,total:0,failed:0,fetched:0}); }
+  let done=0,failed=0,fetched=0,index=0;
   return caches.open(cacheName).then(function(cache){
     function nextChunk(){
       if(index>=total) return Promise.resolve();
       const slice=urls.slice(index,index+SM_CONCURRENCY);
       index+=SM_CONCURRENCY;
       return Promise.all(slice.map(function(url){
-        return fetch(url,{cache:'no-cache'}).then(function(r){
-          if(r && r.status===200){ return cache.put(url,r); }
-          failed++;
+        const h=hashes[url]||'';
+        return cache.match(url).then(function(hit){
+          // 已缓存且（清单无哈希 或 哈希一致）→ 跳过；哈希不一致 → 重新下载
+          if(hit && (!h || localHashes[url]===h)) return;
+          // 带 ?h= 内容哈希作为查询串，穿透 CDN/浏览器中间缓存；缓存 key 仍用裸 URL
+          const reqUrl=h ? url+(url.indexOf('?')>=0?'&':'?')+'h='+encodeURIComponent(h) : url;
+          return fetch(reqUrl,{cache:'no-cache'}).then(function(r){
+            if(r && r.status===200){
+              return cache.put(url,r).then(function(){ fetched++; if(h) localHashes[url]=h; });
+            }
+            failed++;
+          });
         }).catch(function(){ failed++; }).then(function(){
           done++;
           if(onProgress) onProgress(done/total,done,total);
@@ -637,7 +659,10 @@ function smCacheFullInto(cacheName, onProgress){
       })).then(nextChunk);
     }
     return nextChunk();
-  }).then(function(){ return {ok: done-failed, total: total, failed: failed}; });
+  }).then(function(){
+    smSaveFileHashes(localHashes); // 部分失败也保存已完成项，下次重试增量续传
+    return {ok: done-failed, total: total, failed: failed, fetched: fetched};
+  });
 }
 
 // 删除所有旧版数据桶（保留 currentBucket）
@@ -651,41 +676,74 @@ function smDeleteOldBuckets(currentBucket){
   }).catch(function(){});
 }
 
-// 读取远端版本：sw_version 与 APK 版本一致（如 0.2.0）
-function smFetchRemoteVersion(){
+// 同步清理：删除桶内不在当前清单中的条目
+// （如旧 ?v= 构建戳的 cache-manifest.js、同版本重新部署后已删除的页面）
+function smPurgeStaleEntries(cacheName){
+  if(!('caches' in window)) return Promise.resolve();
+  const keep={};
+  smBuildUrlList().forEach(function(u){ try{ keep[new URL(u,location.href).href]=1; }catch(_){} });
+  return caches.open(cacheName).then(function(cache){
+    return cache.keys().then(function(reqs){
+      return Promise.all(
+        reqs.filter(function(rq){ return !keep[rq.url]; })
+            .map(function(rq){ return cache.delete(rq); })
+      );
+    });
+  }).catch(function(){});
+}
+
+// 读取远端版本信息：version（与 APK 一致）+ content_hash（全站内容哈希，构建生成）
+function smFetchRemoteInfo(){
   return fetch('./version.json?t='+Date.now(), {cache:'no-cache'})
     .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(function(d){ return d.sw_version || d.version || d.apk_version || ''; })
-    .catch(function(){ return ''; });
+    .then(function(d){ return {version: d.sw_version || d.version || d.apk_version || '', contentHash: d.content_hash || ''}; });
+}
+function smFetchRemoteVersion(){
+  return smFetchRemoteInfo().then(function(i){ return i.version; }).catch(function(){ return ''; });
+}
+// 重新拉取并执行最新缓存清单（内容更新但版本号未变时，刷新 __SM_CACHE_URLS/__SM_CACHE_HASHES）
+function smReloadManifest(){
+  return fetch('./assets/js/cache-manifest.js?t='+Date.now(), {cache:'no-cache'})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(function(code){ (new Function(code))(); })
+    .catch(function(){});
 }
 
 // 全量安装/更新（切换桶方案）
 // mode: 'install' | 'update'（当前无 UI 差异，保留参数兼容）
 // version: 可选；缺省时优先级：清单版本 > 远端 > 本地 > 'dev'
 // onProgress(ratio,done,total) → 返回 Promise<{ok,total,failed,version}>
+// 防重入：安装进行中时复用同一 Promise，避免启动检查与补全并发跑两个全量下载
+let __smInstallInFlight = null;
 function smInstall(mode,onProgress,version){
+  if(__smInstallInFlight) return __smInstallInFlight;
   let verP;
   if(version){ verP=Promise.resolve(version); }
   else if(window.SM && window.SM.MANIFEST_VERSION){ verP=Promise.resolve(window.SM.MANIFEST_VERSION); }
   else { verP=smFetchRemoteVersion().then(function(rv){ return rv || smGetLocalVersion() || 'dev'; }); }
-  return verP.then(function(ver){
+  const p = verP.then(function(ver){
     const newBucket=smDataCacheName(ver);
-    let oldBucket=null; try{ oldBucket=localStorage.getItem(SM_LS_BUCKET)||null; }catch(_){}
     return smCacheFullInto(newBucket,onProgress).then(function(res){
-      // 清单为空（cache-manifest.js 尚未加载）或全部失败：不存储版本号，避免误判
+      // 清单为空（cache-manifest.js 尚未加载）或有失败：不更新版本指针。
+      // 注意：不删除任何桶——newBucket 可能就是当前活动桶（同版本补全场景），
+      // 且保留已下载内容可让下次重试增量续传（smCacheFullInto 会跳过已缓存项）。
       if(res.total===0 || res.failed>0){
-        // 有失败或清单空：删新桶，保留旧桶（中途断网/失败旧缓存不动）
-        return caches.delete(newBucket).catch(function(){}).then(function(){ return Object.assign({},res,{version:ver}); });
+        return Object.assign({},res,{version:ver});
       }
-      // 全量成功：记录新桶名+版本，删旧桶
+      // 全量成功：记录新桶名+版本+内容哈希，清理桶内过期条目 + 所有其它数据桶
       try{ localStorage.setItem(SM_LS_BUCKET,newBucket); }catch(_){}
       smSetLocalVersion(ver);
-      if(oldBucket && oldBucket!==newBucket){
-        return caches.delete(oldBucket).catch(function(){}).then(function(){ return Object.assign({},res,{version:ver}); });
-      }
-      return Object.assign({},res,{version:ver});
+      smSetLocalContentHash(window.SM_CACHE_CONTENT_HASH || '');
+      return smPurgeStaleEntries(newBucket)
+        .then(function(){ return smDeleteOldBuckets(newBucket); })
+        .then(function(){ return Object.assign({},res,{version:ver}); });
     });
   });
+  __smInstallInFlight = p.then(
+    function(r){ __smInstallInFlight=null; return r; },
+    function(e){ __smInstallInFlight=null; throw e; }
+  );
+  return __smInstallInFlight;
 }
 
 // 完整性校验：按全量清单实际匹配缓存（caches.match 全局搜索跨桶）
@@ -707,8 +765,8 @@ function smVerifyCacheIntegrity(){
 // 失败/断网时静默保留当前内容，下次启动自动重试
 function smByInstall(targetVersion){
   window.SM.pwaCache.install('install', null, targetVersion).then(function(res){
-    // 全量成功（含已是最新无变化）才重载；失败/断网保留当前内容不动
-    if(res && res.total > 0 && res.failed === 0){
+    // 实际下载了新内容且全部成功才重载；无变化/失败/断网均不打断阅读
+    if(res && res.total > 0 && res.failed === 0 && res.fetched > 0){
       window.location.reload();
     }
   }).catch(function(){ /* 静默失败，下次启动重试 */ });
@@ -721,6 +779,8 @@ window.SM.pwaCache = {
   getLocalVersion: smGetLocalVersion,
   setLocalVersion: smSetLocalVersion,
   fetchRemoteVersion: smFetchRemoteVersion,
+  fetchRemoteInfo: smFetchRemoteInfo,
+  reloadManifest: smReloadManifest,
   verifyIntegrity: smVerifyCacheIntegrity,
   deleteOldBuckets: smDeleteOldBuckets
 };
@@ -910,27 +970,32 @@ async function setupAdaptiveActions() {
 
 window.addEventListener('load', setupAdaptiveActions);
 
-// 启动版本检查：只要不是 APK（普通浏览器/PWA）都后台静默全量缓存
-// 首次打开：后台静默全量缓存（不弹进度条，缓存完成后自动重载）
-// 版本变化：后台静默切换数据桶重新缓存（不弹窗，不打断阅读）
+// 启动检查：版本变化或内容哈希变化（版本没变但内容更新）都触发增量重新缓存
+// 首次打开：后台静默全量缓存（不弹进度条，有新内容下载完成后自动重载）
 // 守卫条件：仅 Capacitor(APK) 不触发（无 SW 环境）
 function checkPwaStartupCache(){
     if(isCapacitorApp() || !('caches' in window)) return;
     const storedVersion = smGetLocalVersion();
-    const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
-    smFetchRemoteVersion().then(function(remote){
-        const target = remote || manifestVer || storedVersion || 'dev';
-        if(storedVersion){
-            // 非首次：仅当版本变化时后台切换数据桶重新缓存
-            if((remote && remote !== storedVersion) || (manifestVer && manifestVer !== storedVersion)){
+    smFetchRemoteInfo().then(function(remote){
+        // 已加载的清单与远端内容哈希不一致 → 先重载清单（拿到最新 URL/哈希列表再比对）
+        const loadedHash = window.SM_CACHE_CONTENT_HASH || '';
+        const pre = (remote.contentHash && remote.contentHash !== loadedHash)
+          ? smReloadManifest() : Promise.resolve();
+        return pre.then(function(){
+            // 目标版本优先用清单版本（与 __SM_CACHE_URLS 内容严格对应），
+            // 远端 version.json 仅作兜底。判断与安装目标必须是同一个值，
+            // 否则 remote/manifest 不一致时会每次启动都重装+reload 死循环。
+            const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
+            const target = manifestVer || remote.version || storedVersion || 'dev';
+            // 内容一致性：远端 content_hash 与上次全量成功记录的不一致 → 需要重新缓存
+            const contentChanged = !!(remote.contentHash && remote.contentHash !== smGetLocalContentHash());
+            if(target !== storedVersion || contentChanged){
                 smByInstall(target);
             }
-        } else {
-            // 首次安装：后台静默全量缓存
-            smByInstall(target);
-        }
+        });
     }).catch(function(){
         // 网络失败：首次安装用清单版本兜底
+        const manifestVer = (window.SM && window.SM.MANIFEST_VERSION) || '';
         if(!storedVersion && manifestVer){
             smByInstall(manifestVer);
         }
@@ -1074,7 +1139,7 @@ window.APP_VERSION="{self.app_version}";
 <script src="assets/js/tts.js" defer></script>
 <script src="assets/js/reader.js" defer></script>
 <script src="assets/js/highlight.js" defer></script>
-<script src="assets/js/cache-manifest.js?v={self.build_tag}" defer></script>
+<script src="assets/js/cache-manifest.js" defer></script>
 <script src="assets/js/sw-register.js" defer></script>
 {self._app_update_loader_script()}
 {self._pwa_actions_script()}
@@ -1215,18 +1280,13 @@ window.APP_VERSION="{self.app_version}";
             _app_name = "共读"
         # 版本号统一使用 app_config.json 的 version（与 APK 一致）
         _sw_ver = _app_ver
-        # 构建时间戳仅用于 SW 注册与清单的缓存失效查询串（不参与版本语义）
-        _build_tag = self.build_tag
         version_info = {
             "version": _app_ver,
             "sw_version": _sw_ver,
             "apk_version": _app_ver,
             "apk_file": f"{_app_name}-v{_app_ver}.apk",
         }
-        self.output_dir.joinpath("version.json").write_text(
-            json.dumps(version_info, ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
+        # version.json 延后写出：需先计算全站内容哈希 content_hash（见下）
 
         headers_text = """/*
   X-Content-Type-Options: nosniff
@@ -1247,39 +1307,63 @@ window.APP_VERSION="{self.app_version}";
         self.output_dir.joinpath("offline.htm").write_text(OFFLINE_HTML,encoding="utf-8")
         page_files=[f"page_{i:04d}.htm" for i in range(len(self.spine_items))]
 
-        # 页面全量缓存清单（cache-manifest.js）：构建时注入 window.__SM_CACHE_URLS。
+        # 页面全量缓存清单（cache-manifest.js）：构建时注入 window.__SM_CACHE_URLS / __SM_CACHE_HASHES。
         # 页面 pwaCache 依据该清单进行全量缓存（sm-data-{version} 数据桶）。
-        # 含首页/全部章节页 + 全部静态资源；SW 自身与元数据文件不缓存。
+        # 每个 URL 附内容 md5：版本号不变但内容变化时，运行时按哈希只重新下载变化的文件。
+        def _file_hash(fp: Path) -> str:
+            return hashlib.md5(fp.read_bytes()).hexdigest()[:10]
+
         cache_urls = []
-        # 清单自身也加入全量缓存（离线可用）；带 ?v= 的 key 与 SW CORE_ASSETS 预缓存的裸路径不冲突。
-        manifest_asset_url = f"./assets/js/cache-manifest.js?v={_build_tag}"
+        cache_hashes = {}
         for p in sorted(self.output_dir.rglob("*")):
             if not p.is_file():
                 continue
             rel = p.relative_to(self.output_dir).as_posix()
-            if rel in {"sw.js", "_headers", "index.html"}:
+            if rel in {"sw.js", "_headers", "index.html", "version.json"}:
                 continue
             if Path(rel).name == "cache-manifest.js":
                 continue
             if rel.lower().endswith(".apk"):
                 continue
-            cache_urls.append(f"./{rel}")
-        cache_urls.append(manifest_asset_url)
+            url = f"./{rel}"
+            cache_urls.append(url)
+            cache_hashes[url] = _file_hash(p)
+
+        # 全站内容哈希：任一文件内容变化即变化；写入 version.json 供运行时比对触发重新缓存
+        content_hash = hashlib.md5(
+            "|".join(f"{u}:{cache_hashes[u]}" for u in cache_urls).encode("utf-8")
+        ).hexdigest()[:10]
+        version_info["content_hash"] = content_hash
+        version_path = self.output_dir.joinpath("version.json")
+        version_path.write_text(
+            json.dumps(version_info, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        cache_urls.append("./version.json")
+        cache_hashes["./version.json"] = _file_hash(version_path)
+        # 清单自身也加入全量缓存（离线可用）；其哈希用 content_hash（任何内容变化即触发更新）
+        cache_urls.append("./assets/js/cache-manifest.js")
+        cache_hashes["./assets/js/cache-manifest.js"] = content_hash
 
         manifest_js = (
             "// 构建生成：PWA 全量缓存清单（页面 pwaCache 使用，SW 不参与）\n"
             "window.SM_CACHE_MANIFEST_VERSION=/*__SW_VERSION__*/;\n"
+            "window.SM_CACHE_CONTENT_HASH=" + json.dumps(content_hash) + ";\n"
             "window.__SM_CACHE_URLS=[\n  "
             + ",\n  ".join(json.dumps(u, ensure_ascii=False) for u in cache_urls)
             + "\n];\n"
+            "window.__SM_CACHE_HASHES="
+            + json.dumps(cache_hashes, ensure_ascii=False, separators=(",", ":"))
+            + ";\n"
         ).replace("/*__SW_VERSION__*/", json.dumps(_sw_ver))
         self.assets_js_dir.joinpath("cache-manifest.js").write_text(
             manifest_js, encoding="utf-8"
         )
 
         sw_code=SERVICE_WORKER_JS_NEW.replace("/*__SW_VERSION__*/",json.dumps(_sw_ver))
-        # sw-register.js 的查询串用构建时间戳，保证每次部署浏览器缓存失效
-        sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_build_tag}")
+        # sw.js 注册 URL 查询串用应用版本（sw.js 有 no-cache 响应头；
+        # 不用构建时间戳，避免每次构建都产生新 SW URL 导致整套 SW 重装）
+        sw_register_code = SW_REGISTER_JS.replace("?v=7.3.0", f"?v={_sw_ver}")
         self.assets_js_dir.joinpath("sw-register.js").write_text(sw_register_code, encoding="utf-8")
         self.output_dir.joinpath("sw.js").write_text(sw_code,encoding="utf-8")
         print("📦 已写出 PWA (manifest/version/cache-manifest/sw/offline/_headers)")
