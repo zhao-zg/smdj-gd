@@ -602,6 +602,35 @@ function smoothTransitionTo(url, dir = 'next', allowFetch = true) {
     .catch(() => location.href = url);
 }
 
+/* 同步书籍样式链接：SPA 换页只替换 #reader-content，head 不变。
+   同一本书内各页的 data-book-style 链接可能不同（如封面页没有任何样式链接），
+   若从封面进入正文仅做 swap，正文将缺少 book.css。按目标页同步增删链接。 */
+function syncBookStyles(doc) {
+  try {
+    const want = new Map();
+    doc.querySelectorAll('head link[data-book-style]').forEach(l => {
+      const href = l.getAttribute('href');
+      if (href) want.set(new URL(href, location.href).href, l);
+    });
+    const have = new Map();
+    document.querySelectorAll('head link[data-book-style]').forEach(l => {
+      const href = l.getAttribute('href');
+      if (href) have.set(new URL(href, location.href).href, l);
+    });
+    have.forEach((l, href) => { if (!want.has(href)) l.remove(); });
+    want.forEach((l, href) => {
+      if (!have.has(href)) {
+        const n = document.createElement('link');
+        n.setAttribute('data-book-style', '1');
+        n.rel = 'stylesheet';
+        if (l.getAttribute('type')) n.type = l.getAttribute('type');
+        n.href = href;
+        document.head.appendChild(n);
+      }
+    });
+  } catch (_) {}
+}
+
 function doPageSwap(url, entry, dir) {
   saveScrollImmediate();
   const currentBook = document.querySelector('#reader-content .epub-book')?.dataset.bookId || null;
@@ -610,6 +639,7 @@ function doPageSwap(url, entry, dir) {
     location.href = url;
     return;
   }
+  syncBookStyles(entry.doc);
   /* 换页前停止 TTS，避免继续朗读旧页内容 */
   if (window._ttsDock && (window._ttsDock.playing || window._ttsDock.paused)) {
     window._ttsDock.stop();
