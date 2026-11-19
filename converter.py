@@ -314,7 +314,7 @@ class EPUBToHTMLConverter:
         patterns = [r"<h1\b[^>]*>.*?</h1>", r"<h2\b[^>]*>.*?</h2>", r"<h3\b[^>]*>.*?</h3>"]
         for pat in patterns:
             if re.search(pat, body, flags=re.I | re.S):
-                return re.sub(pat, f'<h1 class="chapter-title">{escaped_title}</h1>', body, count=1, flags=re.I | re.S)
+                return re.sub(pat, f'<h1 class="chapter-title" data-reading-title>{escaped_title}</h1>', body, count=1, flags=re.I | re.S)
         return body
 
     def _clean_body(self, body: str, is_content: bool) -> str:
@@ -460,9 +460,33 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
 </html>"""
 
     def _settings_panel_html(self)->str:
+        group_dates = set()
+        if self.enable_today:
+            for item in self.toc_items:
+                title = item["title"]
+                if "小排" in title and (match := re.search(r"第\s*\d+\s*天\((\d{4}-\d{2}-\d{2})\)", title)):
+                    group_dates.add(match.group(1))
+        schedule_setting = ""
+        if group_dates:
+            dates = html.escape(json.dumps(sorted(group_dates), separators=(",", ":")), quote=True)
+            schedule_setting = f"""<div class="setting">
+      <label for="small-group-weekday">小排星期</label>
+      <select id="small-group-weekday" data-group-dates="{dates}" aria-describedby="small-group-hint">
+        <option value="">原排期</option>
+        <option value="1">周一</option>
+        <option value="2">周二</option>
+        <option value="3">周三</option>
+        <option value="4">周四</option>
+        <option value="5">周五</option>
+        <option value="6">周六</option>
+        <option value="0">主日</option>
+      </select>
+      <small id="small-group-hint">研读顺序不变，只留对齐星期所需的空白天数。</small>
+    </div>"""
         return """<aside class="settings-panel" id="settings-panel" aria-hidden="true">
   <div class="settings-inner">
     <h2>阅读设置</h2>
+    """ + schedule_setting + """
     <div class="setting">
       <label for="font-size-range">字号 <span id="font-size-label"></span></label>
       <input type="range" id="font-size-range" min="15" max="24" value="18" />

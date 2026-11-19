@@ -172,6 +172,15 @@ class MergedReaderTests(unittest.TestCase):
         converter = self.convert(start_date="2026-12-30")
         self.assertEqual(converter.date_map, {"2026-12-30": 1, "2026-12-31": 2, "2027-01-01": 4, "2027-01-02": 5})
 
+    def test_small_group_dates_are_available_across_books(self):
+        make_epub(self.paths[0], "FIRST", titles=("第1天-周一", "第2天-周二-第一周小排追求"))
+        make_epub(self.paths[1], "SECOND", titles=("第1天-周一-第一周小排追求", "第2天-周二"))
+        self.convert()
+        for filename in ("index.html", "page_0001.htm", "page_0004.htm"):
+            page = (self.output / filename).read_text(encoding="utf-8")
+            self.assertIn('data-group-dates="[&quot;2026-01-02&quot;,&quot;2026-01-03&quot;]"', page)
+        self.assertIn('data-reading-title>第3天(2026-01-03)-周六-', page)
+
     def test_multiple_chapters_on_same_day(self):
         make_epub(self.paths[0], "FIRST", days=(1, 1))
         converter = self.convert()

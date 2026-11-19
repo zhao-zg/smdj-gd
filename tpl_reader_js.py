@@ -15,7 +15,7 @@ const FONT_FAMILIES = {
   dyslexic: '"OpenDyslexic",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Microsoft YaHei","Noto Sans CJK SC",sans-serif',
 };
 
-const st = { fontSize: 18, lineHeight: 1.65, font: 'sans', theme: 'auto', ttsVisible: false };
+const st = { fontSize: 18, lineHeight: 1.65, font: 'sans', theme: 'auto', ttsVisible: false, smallGroupWeekday: '' };
 
 let lastScrollY = 0, hideTimer = null, installPromptEvt = null,
     overrideStyle = null, scrollSaveTimer = null;
@@ -316,6 +316,75 @@ function systemThemeWatcher() {
   mq.addEventListener('change', () => { if (st.theme === 'auto') applyTheme(); });
 }
 
+/* ---- 小排排期 ---- */
+const originalTitles = new WeakMap();
+const shiftedDates = new Map();
+let originalPageTitle = document.title;
+let adjustedDateMap = null;
+let lastAdjustedDate = '';
+
+function renderReadingDates() {
+  function updateTitle(title) {
+    return title.replace(/(第\s*\d+\s*天\()(\d{4}-\d{2}-\d{2})(\))(?:(\s*-?\s*)(周[一二三四五六日天]|主日))?/,
+      (original, prefix, date, close, separator, weekday) => {
+        const shifted = shiftedDates.get(date);
+        if (!shifted || shifted === date) return original;
+        const label = ['主日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(shifted).getUTCDay()];
+        return prefix + shifted + close + (weekday ? separator + label : '');
+      });
+  }
+  document.title = updateTitle(originalPageTitle);
+  document.querySelectorAll('#reader-content [data-reading-title], #reader-content .toc-list a').forEach(el => {
+    if (!originalTitles.has(el)) originalTitles.set(el, el.textContent);
+    const title = updateTitle(originalTitles.get(el));
+    if (el.textContent !== title) el.textContent = title;
+  });
+}
+
+function initSmallGroupSchedule() {
+  const control = document.getElementById('small-group-weekday');
+  if (!control) return;
+  control.value = st.smallGroupWeekday;
+  if (control.selectedIndex < 0) control.value = '';
+  const baseMap = window.PAGE_DATE_MAP;
+  const dates = Object.keys(baseMap).sort();
+  const groupDates = new Set(JSON.parse(control.dataset.groupDates));
+
+  function applySchedule() {
+    shiftedDates.clear();
+    adjustedDateMap = null;
+    if (control.value !== '') {
+      const weekday = Number(control.value);
+      adjustedDateMap = {};
+      let offset = 0;
+      let start = 0;
+      // 每段以小排收尾，只在段首留出对齐星期所需的最少天数。
+      dates.forEach((date, end) => {
+        if (groupDates.has(date)) {
+          offset += (weekday - (new Date(date).getUTCDay() + offset) % 7 + 7) % 7;
+        } else if (end !== dates.length - 1) {
+          return;
+        }
+        for (; start <= end; start++) {
+          const base = dates[start];
+          const shifted = new Date(Date.parse(base) + offset * 86400000).toISOString().slice(0, 10);
+          shiftedDates.set(base, shifted);
+          adjustedDateMap[shifted] = baseMap[base];
+          lastAdjustedDate = shifted;
+        }
+      });
+    }
+    renderReadingDates();
+  }
+
+  control.addEventListener('change', () => {
+    st.smallGroupWeekday = control.value;
+    saveSettings();
+    applySchedule();
+  });
+  applySchedule();
+}
+
 /* ---- "今天读到"链接 ---- */
 function initTodayLinks() {
   function toLocalDateText(d) {
@@ -352,7 +421,11 @@ function initTodayLinks() {
       if (total <= 0) return;
 
       const todayText = toLocalDateText(new Date());
-      const titleDateTarget = pickByTitleDate(window.PAGE_DATE_MAP || {}, todayText);
+      if (adjustedDateMap && todayText <= lastAdjustedDate && !(todayText in adjustedDateMap)) {
+        alert('今天没有安排研读内容');
+        return;
+      }
+      const titleDateTarget = pickByTitleDate(adjustedDateMap || window.PAGE_DATE_MAP || {}, todayText);
       if (Number.isInteger(titleDateTarget)) {
         let target = titleDateTarget;
         if (target < 0) target = 0;
@@ -653,7 +726,8 @@ function doPageSwap(url, entry, dir) {
   newNode.dataset.pageIndex = entry.pageInfo.current;
   oldView.replaceWith(newNode);
 
-  document.title   = entry.title;
+  originalPageTitle = entry.title;
+  renderReadingDates();
   window.PAGE_INFO = {
     current:  entry.pageInfo.current,
     total:    entry.pageInfo.total,
@@ -739,6 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   applySettings();
   initControls();
+  initSmallGroupSchedule();
   initBackTop();
   initKeys();
   motionPref();

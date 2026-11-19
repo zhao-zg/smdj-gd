@@ -78,6 +78,8 @@ hr{border:none;height:1px;background:linear-gradient(to right,transparent,var(--
 .settings-inner h2{margin:.2rem 0 1.4rem;font-size:1.1rem;letter-spacing:.4px;}
 .setting{display:flex;flex-direction:column;gap:.35rem;margin-bottom:1.2rem;}
 .setting label{font-size:.7rem;font-weight:600;letter-spacing:.9px;text-transform:uppercase;color:var(--c-fg-soft);display:flex;justify-content:space-between;}
+#small-group-weekday{width:100%;font:inherit;font-size:.85rem;padding:.45rem .65rem;border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);color:var(--c-fg);}
+#small-group-hint{font-size:.72rem;color:var(--c-fg-soft);}
 .setting input[type=range]{width:100%;appearance:none;height:6px;border-radius:4px;background:var(--c-surface);border:1px solid var(--c-border);}
 .setting input[type=range]::-webkit-slider-thumb{appearance:none;width:18px;height:18px;border-radius:50%;background:var(--c-accent);box-shadow:0 2px 8px -2px rgba(var(--c-accent-rgb),.7);cursor:pointer;border:2px solid #fff;}
 .chips{display:flex;flex-wrap:wrap;gap:.55rem;}

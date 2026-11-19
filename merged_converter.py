@@ -335,7 +335,7 @@ class MergedEPUBConverter(EPUBToHTMLConverter):
             return body
         anchors = re.findall(r'\bid="([^"]+)"', heading.group(2))
         content = "".join(f'<span id="{html.escape(anchor, quote=True)}"></span>' for anchor in anchors)
-        replacement = heading.group(1) + content + html.escape(title) + heading.group(3)
+        replacement = heading.group(1) + content + f'<span data-reading-title>{html.escape(title)}</span>' + heading.group(3)
         return body[:heading.start()] + replacement + body[heading.end():]
 
     def _generate_content_pages(self):
