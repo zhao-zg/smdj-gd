@@ -481,7 +481,7 @@ window.PAGE_INFO={{current:{idx},total:{total},prevPage:{f'"{prev}"' if prev els
         <option value="6">周六</option>
         <option value="0">主日</option>
       </select>
-      <small id="small-group-hint">研读顺序不变，只留对齐星期所需的空白天数。</small>
+      <small id="small-group-hint">就近对齐小排星期，可提前或顺延，研读顺序不变。</small>
     </div>"""
         return """<aside class="settings-panel" id="settings-panel" aria-hidden="true">
   <div class="settings-inner">

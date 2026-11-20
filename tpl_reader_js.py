@@ -358,16 +358,22 @@ function initSmallGroupSchedule() {
       adjustedDateMap = {};
       let offset = 0;
       let start = 0;
-      // 每段以小排收尾，只在段首留出对齐星期所需的最少天数。
+      let previousEnd = -Infinity;
+      const dayMs = 86400000;
       dates.forEach((date, end) => {
         if (groupDates.has(date)) {
-          offset += (weekday - (new Date(date).getUTCDay() + offset) % 7 + 7) % 7;
+          const later = (weekday - new Date(date).getUTCDay() + 7) % 7;
+          offset = later <= 3 ? later : later - 7;
+          const earliestOffset = (previousEnd - Date.parse(dates[start])) / dayMs + 1;
+          // 周期为七天；最近的日期若与上一段重叠，就按周向后找。
+          if (offset < earliestOffset) offset += Math.ceil((earliestOffset - offset) / 7) * 7;
         } else if (end !== dates.length - 1) {
           return;
         }
         for (; start <= end; start++) {
           const base = dates[start];
-          const shifted = new Date(Date.parse(base) + offset * 86400000).toISOString().slice(0, 10);
+          previousEnd = Date.parse(base) + offset * dayMs;
+          const shifted = new Date(previousEnd).toISOString().slice(0, 10);
           shiftedDates.set(base, shifted);
           adjustedDateMap[shifted] = baseMap[base];
           lastAdjustedDate = shifted;
