@@ -125,6 +125,16 @@ function normalizeUrlPathname(pathname){
     return p;
   }catch(e){ return pathname; }
 }
+async function matchDataCache(request){
+  const names=await caches.keys();
+  for(const name of names){
+    if(name.indexOf(DATA_CACHE_PREFIX)!==0) continue;
+    const cache=await caches.open(name);
+    const cached=await cache.match(request);
+    if(cached) return cached;
+  }
+  return null;
+}
 async function precacheTo(cacheName, assets){
   const cache=await caches.open(cacheName);
   let okCount=0;
@@ -177,10 +187,11 @@ async function handleNavigation(event){
   }
   const normalizedURL=url.origin + normalizeUrlPathname(url.pathname);
   // 不使用 navigationPreload：离线时 event.preloadResponse 可能挂起导致导航超时。
-  // 全局缓存搜索：可命中页面数据桶（sm-data-{version}）或核心桶（sm-main）。
+  // 优先读数据桶，更新完成后旧桶才删除；核心桶仅作回退，避免旧核心副本遮住新资源。
   // 注意：不要用 caches.match('./') 兜底——它会把目录页当作正文页返回，
   // 导致"点目录栏目后地址变成 page_XXXX.htm 但内容仍是目录页"。未缓存的正文页应走网络，网络失败回退 offline。
-  const cached=await caches.match(request) || await caches.match(normalizedURL);
+  const cached=await matchDataCache(request) || await matchDataCache(normalizedURL) ||
+               await caches.match(request) || await caches.match(normalizedURL);
   if(cached){
     log('nav cache hit',normalizedURL);
     return cached;
@@ -204,9 +215,9 @@ async function handleNavigation(event){
 }
 async function cacheFirstThenRevalidate(req){
   const cache=await caches.open(CACHE_NAME);
-  /* 全局搜索（含数据桶），与 precacheTo/cache.put 的绝对 URL key 一致 */
+  /* 数据桶优先于核心桶，与 precacheTo/cache.put 的绝对 URL key 一致 */
   const absUrl=new URL(req.url,self.location.href).href;
-  const cached=await caches.match(req) || await caches.match(absUrl);
+  const cached=await matchDataCache(req) || await caches.match(req) || await caches.match(absUrl);
   const fetchPromise=fetch(req).then(r=>{
     if(r && r.ok) cache.put(absUrl,r.clone());
     return r;

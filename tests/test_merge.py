@@ -107,9 +107,11 @@ class MergedReaderTests(unittest.TestCase):
         # 全量缓存清单由页面 pwaCache 使用（cache-manifest.js），SW 仅预缓存核心资源
         cache_manifest = (self.output / "assets/js/cache-manifest.js").read_text(encoding="utf-8")
         self.assertIn("assets/books/book_002/OPS/images/shared.png", cache_manifest)
+        self.assertIn('"./"', cache_manifest)
         self.assertIn("window.__SM_CACHE_HASHES=", cache_manifest)
         self.assertIn("window.SM_CACHE_CONTENT_HASH=", cache_manifest)
         self.assertIn('"content_hash"', (self.output / "version.json").read_text(encoding="utf-8"))
+        self.assertIn("matchDataCache(request)", (self.output / "sw.js").read_text(encoding="utf-8"))
 
     def test_source_inline_styles_and_heading_attributes_survive(self):
         self.convert()

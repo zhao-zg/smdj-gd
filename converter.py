@@ -1353,6 +1353,10 @@ window.APP_VERSION="{self.app_version}";
             cache_urls.append(url)
             cache_hashes[url] = _file_hash(p)
 
+        # 目录页由 Service Worker 的 './' 核心缓存提供；纳入数据桶以便页面内容也能更新。
+        cache_urls.append("./")
+        cache_hashes["./"] = _file_hash(self.output_dir.joinpath("index.html"))
+
         # 全站内容哈希：任一文件内容变化即变化；写入 version.json 供运行时比对触发重新缓存
         content_hash = hashlib.md5(
             "|".join(f"{u}:{cache_hashes[u]}" for u in cache_urls).encode("utf-8")
